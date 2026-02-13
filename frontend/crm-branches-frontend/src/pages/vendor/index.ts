@@ -1,0 +1,13 @@
+export { default as VendorDashboardPage } from './VendorDashboardPage';
+export { default as BranchesPage } from './BranchesPage';
+export { default as SalesPage } from './SalesPage';
+export { default as MembershipsPage } from './MembershipsPage';
+export { default as MembershipDetailPage } from './MembershipDetailPage';
+export { default as CustomersPage } from './CustomersPage';
+export { default as SearchPage } from './SearchPage';
+export { default as LeadsPage } from './LeadsPage';
+export { default as LeadDetailPage } from './LeadDetailPage';
+export { default as AppointmentsPage } from './AppointmentsPage';
+export { default as SettlementsPage } from './SettlementsPage';
+export { default as VendorProfilePage } from './VendorProfilePage';
+export { default as LoyaltyPage } from './LoyaltyPage';

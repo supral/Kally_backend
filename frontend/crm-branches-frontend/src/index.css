@@ -1,0 +1,89 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.9);
+  background-color: #0f1117;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Theme variables (dark default) */
+  --theme-bg: #0f1117;
+  --theme-bg-header: rgba(255, 255, 255, 0.04);
+  --theme-bg-card: rgba(255, 255, 255, 0.04);
+  --theme-border: rgba(255, 255, 255, 0.08);
+  --theme-text: rgba(255, 255, 255, 0.9);
+  --theme-text-heading: #fff;
+  --theme-link: #818cf8;
+  --theme-link-hover: #a5b4fc;
+  --theme-welcome-bg: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(79, 70, 229, 0.1) 100%);
+  --theme-border-accent: rgba(99, 102, 241, 0.25);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  color: #000;
+  background-color: #f1f5f9;
+  --theme-bg: #f1f5f9;
+  --theme-bg-header: rgba(0, 0, 0, 0.04);
+  --theme-bg-card: #ffffff;
+  --theme-border: rgba(0, 0, 0, 0.08);
+  --theme-text: #000;
+  --theme-text-heading: #000;
+  --theme-link: #4f46e5;
+  --theme-link-hover: #6366f1;
+  --theme-welcome-bg: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(79, 70, 229, 0.05) 100%);
+  --theme-border-accent: rgba(79, 70, 229, 0.2);
+}
+
+/* Dropdown options: visible in both themes (dark = light text on dark bg, light = dark text on light bg) */
+select option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--theme-bg);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--theme-link);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--theme-link-hover);
+}
+
+button {
+  font-family: inherit;
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 1.5rem;
+  }
+  .dashboard-header-user .user-name {
+    display: none;
+  }
+}

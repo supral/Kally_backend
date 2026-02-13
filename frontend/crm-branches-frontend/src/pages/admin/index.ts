@@ -1,0 +1,16 @@
+export { default as AdminDashboardPage } from './AdminDashboardPage';
+export { default as OwnerOverviewPage } from './OwnerOverviewPage';
+export { default as VendorsPage } from './VendorsPage';
+export { default as BranchesPage } from './BranchesPage';
+export { default as SalesPage } from './SalesPage';
+export { default as MembershipsPage } from './MembershipsPage';
+export { default as MembershipDetailPage } from './MembershipDetailPage';
+export { default as CustomersPage } from './CustomersPage';
+export { default as SearchPage } from './SearchPage';
+export { default as LeadsPage } from './LeadsPage';
+export { default as LeadDetailPage } from './LeadDetailPage';
+export { default as AppointmentsPage } from './AppointmentsPage';
+export { default as SettlementsPage } from './SettlementsPage';
+export { default as SettingsPage } from './SettingsPage';
+export { default as AdminProfilePage } from './ProfilePage';
+export { default as LoyaltyPage } from './LoyaltyPage';
