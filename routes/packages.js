@@ -6,8 +6,8 @@ const { protect, authorize } = require('../middleware/auth');
 const router = express.Router();
 router.use(protect);
 
-/** GET /api/packages - list packages. Default: active only (dropdown). ?all=true for admin: all */
-router.get('/', async (req, res) => {
+/** GET /api/packages or /api/packages/ - list packages. Default: active only (dropdown). ?all=true for admin: all */
+const listPackages = async (req, res) => {
   try {
     const all = req.query.all === 'true' && req.user?.role === 'admin';
     const filter = all ? {} : { isActive: true };
@@ -19,7 +19,9 @@ router.get('/', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch packages.' });
   }
-});
+};
+router.get('/', listPackages);
+router.get('', listPackages);
 
 /** POST /api/packages - create (admin only) */
 router.post('/', authorize('admin'), async (req, res) => {
