@@ -23,19 +23,22 @@ const packageRoutes = require('./routes/packages');
 connectDB();
 
 const app = express();
-app.use(helmet());
+// Allow API to be used from a different origin (deployed frontend); avoids ERR_BLOCKED_BY_RESPONSE
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
+// CORS: allow localhost, and in production any origins listed in FRONTEND_URL (comma-separated)
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((u) => u.trim().replace(/\/$/, '')).filter(Boolean)
+  : [];
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
-    if (process.env.FRONTEND_URL) {
-      const allowed = process.env.FRONTEND_URL.replace(/\/$/, '');
-      if (origin === allowed || origin.startsWith(allowed + '/')) return cb(null, true);
-    }
+    if (allowedOrigins.length && allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed + '/'))) return cb(null, true);
     return cb(null, false);
   },
   credentials: true,
+  optionsSuccessStatus: 200,
 }));
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
@@ -74,7 +77,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || 'localhost';
+// In production, bind to 0.0.0.0 so the server accepts external connections (e.g. Render, Railway)
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
 app.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT}`);
 });
