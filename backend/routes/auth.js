@@ -56,8 +56,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email and password are required.' });
     }
     const user = await User.findOne({ email }).select('+password');
-    if (!user || !(await user.comparePassword(password))) {
+    if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+    }
+    if (!(await user.comparePassword(password))) {
+      return res.status(401).json({ success: false, message: 'Incorrect password.' });
     }
     if (!user.isActive) {
       return res.status(401).json({ success: false, message: 'Your account has been blocked. Contact admin.' });
