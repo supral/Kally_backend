@@ -1,1 +1,1 @@
-export { default } from '../../features/dashboard/pages/BranchDashboardPage';
+export { default } from '../../features/sales/pages/SalesPage';

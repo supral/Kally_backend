@@ -1,11 +1,13 @@
 const express = require('express');
 const Membership = require('../models/Membership');
+const Package = require('../models/Package');
 const MembershipType = require('../models/MembershipType');
 const MembershipUsage = require('../models/MembershipUsage');
 const InternalSettlement = require('../models/InternalSettlement');
 const Settings = require('../models/Settings');
 const AuditLog = require('../models/AuditLog');
 const Customer = require('../models/Customer');
+const Branch = require('../models/Branch');
 const { protect, authorize } = require('../middleware/auth');
 const { getBranchId } = require('../middleware/branchFilter');
 
@@ -21,9 +23,12 @@ const router = express.Router();
 
 router.use(protect);
 
+const DEFAULT_MEMBERSHIPS_LIMIT = 1000;
+const MAX_MEMBERSHIPS_LIMIT = 2000;
+
 router.get('/', async (req, res) => {
   try {
-    const { branchId, customerId, status } = req.query;
+    const { branchId, customerId, status, limit: limitParam } = req.query;
     const bid = getBranchId(req.user);
     const filter = {};
     if (req.user.role === 'admin') {
@@ -35,11 +40,13 @@ router.get('/', async (req, res) => {
     if (customerId) filter.customerId = customerId;
     if (status) filter.status = status;
 
+    const limit = limitParam ? Math.min(MAX_MEMBERSHIPS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : DEFAULT_MEMBERSHIPS_LIMIT;
     const memberships = await Membership.find(filter)
       .populate('customerId', 'name phone email membershipCardId')
       .populate('membershipTypeId', 'name totalCredits')
       .populate('soldAtBranchId', 'name')
       .sort({ createdAt: -1 })
+      .limit(limit)
       .lean();
 
     res.json({
@@ -76,10 +83,19 @@ router.post('/', async (req, res) => {
     const soldAt = req.user.role === 'admin' ? soldAtBranchId : (bid || soldAtBranchId);
     if (!soldAt) return res.status(400).json({ success: false, message: 'Branch is required.' });
 
-    const packagePrice = customerPackagePrice != null && customerPackagePrice !== '' ? Number(customerPackagePrice) : undefined;
+    const packageName = customerPackage && String(customerPackage).trim() ? String(customerPackage).trim() : null;
+    const rawPrice = customerPackagePrice != null && customerPackagePrice !== '' ? Number(customerPackagePrice) : NaN;
+    if (!packageName)
+      return res.status(400).json({ success: false, message: 'Package is required. Select a package from the list.' });
+    if (Number.isNaN(rawPrice) || rawPrice < 0)
+      return res.status(400).json({ success: false, message: 'Package price is required and must be 0 or greater.' });
+
+    const packagePrice = rawPrice;
     const discount = discountAmount != null && discountAmount !== '' ? Math.max(0, Number(discountAmount)) : 0;
-    const packageName = customerPackage && String(customerPackage).trim() ? String(customerPackage).trim() : undefined;
     const typeId = membershipTypeId || await getDefaultMembershipTypeId();
+    let settlementAmount;
+    const pkg = await Package.findOne({ name: packageName }).lean();
+    if (pkg?.settlementAmount != null) settlementAmount = Number(pkg.settlementAmount);
     const membership = await Membership.create({
       customerId,
       membershipTypeId: typeId,
@@ -88,9 +104,10 @@ router.post('/', async (req, res) => {
       soldAtBranchId: soldAt,
       status: 'active',
       expiryDate: expiryDate ? new Date(expiryDate) : undefined,
-      packagePrice,
+      packagePrice: packagePrice,
       discountAmount: discount,
-      packageName,
+      packageName: packageName,
+      settlementAmount: settlementAmount,
     });
 
     const effectivePrice = (packagePrice != null ? packagePrice : 0) - discount;
@@ -131,6 +148,77 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to create membership.' });
+  }
+});
+
+/** POST /api/memberships/import - bulk import from CSV-style rows. Branch from file is resolved by name. */
+router.post('/import', async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'rows array is required and must not be empty.' });
+    }
+    const bid = getBranchId(req.user);
+    const branches = await Branch.find({ isActive: true }).lean();
+    const branchByName = {};
+    branches.forEach((b) => { branchByName[b.name.trim().toLowerCase()] = b._id; });
+    const defaultTypeId = await getDefaultMembershipTypeId();
+    let imported = 0;
+    let createdCustomers = 0;
+    const errors = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const customerName = (row.customerName || row.customer || '').toString().trim();
+      const customerPhone = (row.customerPhone || row.phone || '').toString().trim();
+      const customerEmail = (row.customerEmail || row.email || '').toString().trim();
+      const totalCredits = parseInt(row.totalCredits, 10);
+      const soldAtBranchName = (row.soldAtBranch || row.soldAt || row.branch || '').toString().trim();
+      if (!customerName || !customerPhone) {
+        errors.push({ row: i + 1, message: 'Customer name and phone are required.' });
+        continue;
+      }
+      if (!totalCredits || totalCredits < 1) {
+        errors.push({ row: i + 1, message: 'Total credits must be at least 1.' });
+        continue;
+      }
+      const branchId = soldAtBranchName ? branchByName[soldAtBranchName.toLowerCase()] : null;
+      if (!branchId) {
+        errors.push({ row: i + 1, message: `Branch "${soldAtBranchName || '(empty)'}" not found. Use exact branch name from Branches.` });
+        continue;
+      }
+      if (req.user.role === 'vendor' && bid && String(branchId) !== String(bid)) {
+        errors.push({ row: i + 1, message: 'You can only import for your own branch.' });
+        continue;
+      }
+      let customer = await Customer.findOne({ phone: customerPhone }).lean();
+      if (!customer) {
+        const created = await Customer.create({ name: customerName, phone: customerPhone, email: customerEmail || undefined });
+        customer = { _id: created._id, name: created.name, phone: created.phone, email: created.email };
+        createdCustomers++;
+      }
+      const purchaseDate = row.purchaseDate ? new Date(row.purchaseDate) : new Date();
+      const expiryDate = row.expiryDate ? new Date(row.expiryDate) : undefined;
+      const packagePrice = row.packagePrice != null && row.packagePrice !== '' ? Number(row.packagePrice) : undefined;
+      const discountAmount = row.discountAmount != null && row.discountAmount !== '' ? Math.max(0, Number(row.discountAmount)) : 0;
+      const customerPackage = (row.customerPackage || row.packageName || '').toString().trim() || undefined;
+      await Membership.create({
+        customerId: customer._id,
+        membershipTypeId: defaultTypeId,
+        totalCredits,
+        usedCredits: 0,
+        soldAtBranchId: branchId,
+        status: 'active',
+        purchaseDate,
+        expiryDate: expiryDate || undefined,
+        packagePrice,
+        discountAmount,
+        packageName: customerPackage,
+      });
+      imported++;
+    }
+    res.json({ success: true, imported, createdCustomers, errors });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to import memberships.' });
   }
 });
 
@@ -343,13 +431,18 @@ router.post('/:id/use', async (req, res) => {
 
     const soldAtBranchId = membership.soldAtBranchId._id || membership.soldAtBranchId;
     if (String(soldAtBranchId) !== String(usedAtBranchId)) {
-      const settingsDoc = await Settings.findOne().lean();
-      const settlementPercentage = settingsDoc?.settlementPercentage ?? 100;
-      const multiplier = settlementPercentage / 100;
-      const price = membership.membershipTypeId?.price != null ? Number(membership.membershipTypeId.price) : (membership.packagePrice != null ? Number(membership.packagePrice) : 0);
-      const totalCredits = membership.totalCredits || 1;
-      const baseAmount = totalCredits > 0 ? (price / totalCredits) * toUse : 0;
-      const amount = Math.round(baseAmount * multiplier * 100) / 100;
+      let amount;
+      if (membership.settlementAmount != null && membership.settlementAmount >= 0) {
+        amount = Math.round(Number(membership.settlementAmount) * toUse * 100) / 100;
+      } else {
+        const settingsDoc = await Settings.findOne().lean();
+        const settlementPercentage = settingsDoc?.settlementPercentage ?? 100;
+        const multiplier = settlementPercentage / 100;
+        const price = membership.membershipTypeId?.price != null ? Number(membership.membershipTypeId.price) : (membership.packagePrice != null ? Number(membership.packagePrice) : 0);
+        const totalCredits = membership.totalCredits || 1;
+        const baseAmount = totalCredits > 0 ? (price / totalCredits) * toUse : 0;
+        amount = Math.round(baseAmount * multiplier * 100) / 100;
+      }
       await InternalSettlement.create({
         fromBranchId: soldAtBranchId,
         toBranchId: usedAtBranchId,

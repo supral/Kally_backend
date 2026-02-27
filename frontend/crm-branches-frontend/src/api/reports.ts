@@ -6,6 +6,7 @@ export async function getSalesDashboard(params?: {
   from?: string;
   to?: string;
   serviceCategory?: string;
+  packageName?: string;
   breakdownPage?: number;
   breakdownLimit?: number;
 }): Promise<{ success: boolean; data?: SalesDashboard; message?: string }> {
@@ -14,6 +15,7 @@ export async function getSalesDashboard(params?: {
   if (params?.from) q.set('from', params.from);
   if (params?.to) q.set('to', params.to);
   if (params?.serviceCategory) q.set('serviceCategory', params.serviceCategory);
+  if (params?.packageName) q.set('packageName', params.packageName);
   if (params?.breakdownPage != null) q.set('breakdownPage', String(params.breakdownPage));
   if (params?.breakdownLimit != null) q.set('breakdownLimit', String(params.breakdownLimit));
   const query = q.toString();

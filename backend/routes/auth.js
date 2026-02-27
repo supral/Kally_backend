@@ -4,29 +4,32 @@ const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-fallback-change-in-production';
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '7d';
 
 const signToken = (id) => jwt.sign({ id }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, vendorName } = req.body;
+    const { name, email, password, vendorName } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, message: 'Name, email and password are required.' });
     }
-    const existingUser = await User.findOne({ email });
+    if (String(password).length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+    }
+    const existingUser = await User.findOne({ email: String(email).toLowerCase().trim() });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'Email already registered.' });
     }
-    const isAdmin = role === 'admin';
+    // Registration only creates vendors; admin accounts must be created via seeder or admin panel
     const user = await User.create({
-      name,
-      email,
-      password,
-      role: isAdmin ? 'admin' : 'vendor',
-      vendorName: vendorName || undefined,
-      approvalStatus: isAdmin ? 'approved' : 'pending',
+      name: String(name).trim(),
+      email: String(email).toLowerCase().trim(),
+      password: String(password),
+      role: 'vendor',
+      vendorName: vendorName ? String(vendorName).trim() : undefined,
+      approvalStatus: 'pending',
     });
     const token = signToken(user._id);
     res.status(201).json({

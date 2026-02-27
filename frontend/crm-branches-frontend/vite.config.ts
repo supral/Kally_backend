@@ -15,6 +15,8 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'es2020',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -23,6 +25,8 @@ export default defineConfig({
           if (id.includes('node_modules/recharts')) return 'charts';
           if (id.includes('node_modules/zustand')) return 'store';
         },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },
     chunkSizeWarningLimit: 600,

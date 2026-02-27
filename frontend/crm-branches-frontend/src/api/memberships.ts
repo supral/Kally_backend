@@ -40,7 +40,38 @@ export async function createMembership(data: {
   return apiRequest<{ membership: Membership }>('/memberships', { method: 'POST', body: JSON.stringify(data) });
 }
 
-export async function recordMembershipUsage(membershipId: string, data: { creditsUsed?: number; notes?: string; serviceDetails?: string }) {
+export type ImportRow = {
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  totalCredits: number;
+  soldAtBranch: string;
+  purchaseDate?: string;
+  expiryDate?: string;
+  packagePrice?: number;
+  discountAmount?: number;
+  customerPackage?: string;
+};
+
+export async function importMemberships(rows: ImportRow[]): Promise<{
+  success: boolean;
+  imported?: number;
+  createdCustomers?: number;
+  errors?: { row: number; message: string }[];
+  message?: string;
+}> {
+  const r = await apiRequest<{ imported: number; createdCustomers: number; errors: { row: number; message: string }[] }>('/memberships/import', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  });
+  if (r.success && 'imported' in r) {
+    const d = r as unknown as { imported: number; createdCustomers: number; errors: { row: number; message: string }[] };
+    return { success: true, imported: d.imported, createdCustomers: d.createdCustomers, errors: d.errors };
+  }
+  return { success: false, message: (r as { message?: string }).message };
+}
+
+export async function recordMembershipUsage(membershipId: string, data: { creditsUsed?: number; notes?: string; serviceDetails?: string; usedAtBranchId?: string }) {
   return apiRequest<{ usage: MembershipUsage }>(`/memberships/${membershipId}/use`, { method: 'POST', body: JSON.stringify(data) });
 }
 

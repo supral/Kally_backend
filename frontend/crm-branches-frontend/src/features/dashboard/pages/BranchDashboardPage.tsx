@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getSalesDashboard } from '../../../api/reports';
 import { getBranches } from '../../../api/branches';
 import { useAuth } from '../../../auth/hooks/useAuth';
@@ -8,11 +9,23 @@ import type { Branch } from '../../../types/common';
 
 const breakdownLimit = 10;
 
+function getDefaultDateRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setMonth(from.getMonth() - 1);
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+  };
+}
+
 export default function BranchDashboardPage() {
   const { user } = useAuth();
   const [data, setData] = useState<SalesDashboardType | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState('');
+  const [dateFrom, setDateFrom] = useState(() => getDefaultDateRange().from);
+  const [dateTo, setDateTo] = useState(() => getDefaultDateRange().to);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -31,6 +44,8 @@ export default function BranchDashboardPage() {
     setLoading(true);
     getSalesDashboard({
       branchId: branchId || undefined,
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
       breakdownPage: isAdmin ? 1 : breakdownPage,
       breakdownLimit: isAdmin ? 1 : breakdownLimit,
     }).then((r) => {
@@ -38,7 +53,7 @@ export default function BranchDashboardPage() {
       if (r.success && r.data) setData(r.data);
       else setError(r.message || 'Failed to load');
     });
-  }, [branchId, isAdmin, breakdownPage]);
+  }, [branchId, dateFrom, dateTo, isAdmin, breakdownPage]);
 
   useEffect(() => {
     if (!selectedBranchId) {
@@ -48,6 +63,8 @@ export default function BranchDashboardPage() {
     setDetailLoading(true);
     getSalesDashboard({
       branchId: selectedBranchId,
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
       breakdownPage: detailBreakdownPage,
       breakdownLimit,
     }).then((r) => {
@@ -55,19 +72,27 @@ export default function BranchDashboardPage() {
       if (r.success && r.data) setDetailData(r.data);
       else setDetailData(null);
     });
-  }, [selectedBranchId, detailBreakdownPage]);
+  }, [selectedBranchId, dateFrom, dateTo, detailBreakdownPage]);
 
   const selectedBranchName = selectedBranchId && (data?.branches?.find((b) => b.id === selectedBranchId)?.name ?? branches.find((b) => b.id === selectedBranchId)?.name);
 
+  const dailySalesData = data?.dailySales ?? [];
+
   return (
-    <div className="dashboard-content">
+    <div className="dashboard-content sales-dashboard-page">
       <header className="page-hero">
         <h1 className="page-hero-title">Sales dashboard</h1>
         <p className="page-hero-subtitle">Total sales, memberships, and breakdown by customer and package.</p>
-      </header>
-      <section className="content-card">
-        {isAdmin && (
-          <div className="sales-filters">
+        <div className="sales-dashboard-filters">
+          <label>
+            <span>From</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="sales-dashboard-date-input" />
+          </label>
+          <label>
+            <span>To</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="sales-dashboard-date-input" />
+          </label>
+          {isAdmin && (
             <label>
               <span>Branch</span>
               <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
@@ -77,14 +102,73 @@ export default function BranchDashboardPage() {
                 ))}
               </select>
             </label>
-          </div>
-        )}
+          )}
+        </div>
+      </header>
+      <section className="content-card">
         {error && <div className="auth-error">{error}</div>}
         {loading ? (
           <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
         ) : data && (
           <>
-            <div className="owner-hero-stats" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+            <div className="sales-dashboard-daily-section">
+              <div className="sales-dashboard-daily-table-wrap">
+                <h2 className="page-section-title" style={{ marginTop: 0 }}>Daily sales</h2>
+                <div className="data-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th className="num">Daily sales</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailySalesData.length === 0 ? (
+                        <tr><td colSpan={2} className="text-muted">No sales in this period</td></tr>
+                      ) : (
+                        dailySalesData.map((row) => (
+                          <tr key={row.date}>
+                            <td>{new Date(row.date).toLocaleDateString()}</td>
+                            <td className="num">{formatCurrency(row.sales)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="sales-dashboard-daily-chart-wrap">
+                <h2 className="page-section-title" style={{ marginTop: 0 }}>Daily sales chart</h2>
+                <div className="sales-dashboard-chart-container">
+                  {dailySalesData.length === 0 ? (
+                    <p className="text-muted" style={{ padding: '2rem', textAlign: 'center' }}>No data to display</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart data={dailySalesData} margin={{ top: 12, right: 12, left: 12, bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--theme-border)" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          stroke="var(--theme-text)"
+                          strokeOpacity={0.6}
+                        />
+                        <YAxis
+                          tickFormatter={(v) => `$${v}`}
+                          stroke="var(--theme-text)"
+                          strokeOpacity={0.6}
+                        />
+                        <Tooltip
+                          formatter={(value) => [formatCurrency(Number(value ?? 0)), 'Sales']}
+                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                        />
+                        <Bar dataKey="sales" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="owner-hero-stats" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
               <div className="owner-hero-stat">
                 <span className="owner-hero-stat-value">
                   {typeof data.totalSales === 'number'

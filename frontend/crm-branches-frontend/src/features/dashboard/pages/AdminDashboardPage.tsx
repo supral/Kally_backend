@@ -308,19 +308,6 @@ export default function AdminDashboardPage() {
         </section>
       </div>
 
-      <section className="content-card admin-quick-actions">
-        <h2 className="admin-dashboard-section-title" style={{ marginBottom: '1rem' }}>Quick actions</h2>
-        <div className="admin-quick-actions-grid">
-          <Link to={ROUTES.admin.vendors} className="admin-quick-action">Staff (assign branch)</Link>
-          <Link to={ROUTES.admin.branches} className="admin-quick-action">Branches</Link>
-          <Link to={ROUTES.admin.sales} className="admin-quick-action">Sales dashboard</Link>
-          <Link to={ROUTES.admin.overview} className="admin-quick-action">All branches overview</Link>
-          <Link to={ROUTES.admin.leads} className="admin-quick-action">Leads inbox</Link>
-          <Link to={ROUTES.admin.appointments} className="admin-quick-action">Appointments</Link>
-          <Link to={ROUTES.admin.settlements} className="admin-quick-action">Settlements</Link>
-          <Link to={ROUTES.admin.settings} className="admin-quick-action">Settings</Link>
-        </div>
-      </section>
       </div>
     </div>
   );

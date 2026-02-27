@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Branch = require('../models/Branch');
 const Membership = require('../models/Membership');
+const MembershipType = require('../models/MembershipType');
 const MembershipUsage = require('../models/MembershipUsage');
 const Lead = require('../models/Lead');
 const InternalSettlement = require('../models/InternalSettlement');
@@ -158,7 +159,7 @@ router.get('/branch-dashboard', async (req, res) => {
 
 router.get('/sales-dashboard', async (req, res) => {
   try {
-    const { branchId, from, to, serviceCategory, breakdownPage, breakdownLimit } = req.query;
+    const { branchId, from, to, serviceCategory, packageName, breakdownPage, breakdownLimit } = req.query;
     const bid = getBranchId(req.user);
     let branchFilter = {};
     if (req.user.role === 'admin' && branchId) branchFilter = { soldAtBranchId: branchId };
@@ -173,6 +174,19 @@ router.get('/sales-dashboard', async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(breakdownLimit, 10) || 10));
     const skip = (page - 1) * limit;
 
+    let breakdownFilter = { ...branchFilter };
+    if (packageName) {
+      const matchingTypes = await MembershipType.find({ name: packageName }).select('_id').lean();
+      const typeIds = matchingTypes.map((t) => t._id);
+      breakdownFilter = {
+        ...branchFilter,
+        $or: [
+          { packageName: packageName },
+          ...(typeIds.length ? [{ membershipTypeId: { $in: typeIds } }] : []),
+        ],
+      };
+    }
+
     const [memberships, allMembershipsForSales, activeMembershipCount, breakdownTotal, breakdownMemberships, settingsDoc] = await Promise.all([
       Membership.find({
         ...branchFilter,
@@ -183,8 +197,8 @@ router.get('/sales-dashboard', async (req, res) => {
         .lean(),
       Membership.find(branchFilter).select('packagePrice discountAmount membershipTypeId').populate('membershipTypeId', 'price').lean(),
       Membership.countDocuments({ ...branchFilter, status: 'active' }),
-      Membership.countDocuments(branchFilter),
-      Membership.find(branchFilter)
+      Membership.countDocuments(breakdownFilter),
+      Membership.find(breakdownFilter)
         .populate('customerId', 'name customerPackage')
         .populate('membershipTypeId', 'name price')
         .sort({ createdAt: -1 })
@@ -226,6 +240,18 @@ router.get('/sales-dashboard', async (req, res) => {
       revenue: sales * revenueMultiplier,
     }));
 
+    const byDateSales = {};
+    memberships.forEach((m) => {
+      const price = effectivePrice(m);
+      const dateKey = m.purchaseDate ? new Date(m.purchaseDate).toISOString().slice(0, 10) : null;
+      if (dateKey) {
+        byDateSales[dateKey] = (byDateSales[dateKey] || 0) + price;
+      }
+    });
+    const dailySales = Object.entries(byDateSales)
+      .map(([date, sales]) => ({ date, sales: Math.round(sales * 100) / 100 }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     const breakdown = breakdownMemberships.map((m) => {
       const price = effectivePrice(m);
       return {
@@ -250,6 +276,7 @@ router.get('/sales-dashboard', async (req, res) => {
       breakdownLimit: limit,
       byBranch,
       byService,
+      dailySales,
       totalMemberships: memberships.length,
       branches: branches.map((b) => ({ id: b._id, name: b.name })),
     });

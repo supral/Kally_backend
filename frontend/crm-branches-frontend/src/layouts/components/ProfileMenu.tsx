@@ -13,8 +13,7 @@ export function ProfileMenu() {
 
   return (
     <div className="dashboard-header-user">
-      <span className="user-name">{user?.name}</span>
-      <span className="user-role">{user?.role}</span>
+      <span className="user-name">{user?.name ?? user?.role ?? 'User'}</span>
       <button type="button" className="btn-logout" onClick={handleLogout}>
         Logout
       </button>

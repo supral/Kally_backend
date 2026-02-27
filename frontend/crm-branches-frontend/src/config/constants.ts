@@ -1,5 +1,8 @@
 export const APP_NAME = 'Kally Threading – Multi-Branch CRM';
 
+/** Logo used on login and in app nav (sidebar/topbar). File: public/images/Kally-Logo (1).webp */
+export const LOGO_URL = '/images/Kally-Logo%20(1).webp';
+
 export const ROUTES = {
   login: '/login',
   forgotPassword: '/forgot-password',
@@ -10,6 +13,7 @@ export const ROUTES = {
     createVendor: '/admin/create-vendor',
     branches: '/admin/branches',
     sales: '/admin/sales',
+    salesImages: '/admin/sales-images',
     memberships: '/admin/memberships',
     membershipDetail: (id: string) => `/admin/memberships/${id}`,
     customers: '/admin/customers',
@@ -24,11 +28,14 @@ export const ROUTES = {
     loyalty: '/admin/loyalty',
     settings: '/admin/settings',
     profile: '/admin/profile',
+    tickets: '/admin/tickets',
+    ticketDetail: (id: string) => `/admin/tickets/${id}`,
   },
   vendor: {
     root: '/vendor',
     branches: '/vendor/branches',
     sales: '/vendor/sales',
+    salesImages: '/vendor/sales-images',
     memberships: '/vendor/memberships',
     membershipDetail: (id: string) => `/vendor/memberships/${id}`,
     customers: '/vendor/customers',
@@ -41,5 +48,7 @@ export const ROUTES = {
     settlements: '/vendor/settlements',
     loyalty: '/vendor/loyalty',
     profile: '/vendor/profile',
+    tickets: '/vendor/tickets',
+    ticketDetail: (id: string) => `/vendor/tickets/${id}`,
   },
 } as const;

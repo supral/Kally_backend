@@ -10,9 +10,11 @@ export default function AdminPackagesPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
+  const [settlementAmount, setSettlementAmount] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editPrice, setEditPrice] = useState('');
+  const [editSettlementAmount, setEditSettlementAmount] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -44,10 +46,16 @@ export default function AdminPackagesPage() {
       setError('Price must be a non-negative number.');
       return;
     }
-    const res = await createPackage({ name: name.trim(), price: num });
+    const settlement = settlementAmount.trim() ? parseFloat(settlementAmount) : undefined;
+    if (settlement !== undefined && (isNaN(settlement) || settlement < 0)) {
+      setError('Settlement amount must be 0 or greater.');
+      return;
+    }
+    const res = await createPackage({ name: name.trim(), price: num, settlementAmount: settlement });
     if (res.success) {
       setName('');
       setPrice('');
+      setSettlementAmount('');
       setShowForm(false);
       loadPackages();
     } else setError((res as { message?: string }).message || 'Failed to create');
@@ -66,7 +74,12 @@ export default function AdminPackagesPage() {
       setError('Price must be a non-negative number.');
       return;
     }
-    const res = await updatePackage(editingId, { name: editName.trim(), price: num });
+    const settlement = editSettlementAmount.trim() ? parseFloat(editSettlementAmount) : null;
+    if (editSettlementAmount.trim() && (isNaN(settlement!) || settlement! < 0)) {
+      setError('Settlement amount must be 0 or greater.');
+      return;
+    }
+    const res = await updatePackage(editingId, { name: editName.trim(), price: num, settlementAmount: editSettlementAmount.trim() ? settlement! : null });
     if (res.success) {
       setEditingId(null);
       loadPackages();
@@ -90,87 +103,112 @@ export default function AdminPackagesPage() {
   }
 
   return (
-    <div className="dashboard-content">
-      <header className="page-hero">
-        <h1 className="page-hero-title">Customer packages</h1>
-        <p className="page-hero-subtitle">Add and manage packages and prices. Vendors can only choose from this list when creating customers.</p>
+    <div className="dashboard-content packages-page">
+      <header className="page-hero packages-page-hero">
+        <div className="packages-page-hero-top">
+          <div>
+            <h1 className="page-hero-title">Customer packages</h1>
+            <p className="page-hero-subtitle">Add and manage packages and prices. Vendors can only choose from this list when creating customers.</p>
+          </div>
+          <button
+            type="button"
+            className={`packages-page-cta ${showForm ? 'packages-page-cta-secondary' : ''}`}
+            onClick={() => { setShowForm(!showForm); setError(''); }}
+          >
+            {showForm ? 'Cancel' : 'Add package'}
+          </button>
+        </div>
       </header>
-      <section className="content-card">
-        <button type="button" className="auth-submit" style={{ marginBottom: '1rem', width: 'auto' }} onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : 'Add package'}
-        </button>
-        {showForm && (
-          <form onSubmit={handleCreate} className="auth-form" style={{ marginBottom: '1rem', maxWidth: '400px' }}>
-            <label><span>Package name</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Basic, Premium" required /></label>
+
+      {showForm && (
+        <section className="content-card packages-page-form-card">
+          <h2 className="packages-page-form-title">New package</h2>
+          <form onSubmit={handleCreate} className="packages-page-form">
+            <label>
+              <span>Package name</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Basic, Premium" required />
+            </label>
             <label>
               <span>Price</span>
-              <span className="input-prefix-dollar">
-                <span className="input-prefix-symbol" aria-hidden>$</span>
-                <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" required />
-              </span>
+              <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" required />
             </label>
-            <button type="submit" className="auth-submit">Create package</button>
+            <label>
+              <span>Settlement amount (per service)</span>
+              <input type="number" min={0} step="0.01" value={settlementAmount} onChange={(e) => setSettlementAmount(e.target.value)} placeholder="e.g. 5.00 (optional)" />
+            </label>
+            <button type="submit" className="auth-submit packages-page-submit">Create package</button>
           </form>
-        )}
-        {error && <div className="auth-error vendors-error">{error}</div>}
+        </section>
+      )}
+
+      {error && <div className="auth-error packages-page-error" role="alert">{error}</div>}
+
+      <section className="content-card packages-page-table-card">
         {packages.length > 0 ? (
           <>
-            <p className="customers-showing-count text-muted">
+            <p className="packages-page-count text-muted">
               Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, packages.length)} of {packages.length} package{packages.length !== 1 ? 's' : ''}
             </p>
             <div className="data-table-wrap">
-              <table className="data-table">
+              <table className="data-table packages-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th className="packages-table-name">Name</th>
+                    <th className="packages-table-price">Price</th>
+                    <th className="packages-table-settlement">Settlement</th>
+                    <th className="packages-table-status">Status</th>
+                    <th className="packages-table-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedPackages.map((p) => (
-                  <tr key={p.id}>
-                    {editingId === p.id ? (
-                      <>
-                        <td colSpan={4}>
-                          <form onSubmit={handleUpdate} className="auth-form" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
-                            <label style={{ margin: 0 }}><span>Name</span><input value={editName} onChange={(e) => setEditName(e.target.value)} required /></label>
-                            <label style={{ margin: 0 }}>
+                    <tr key={p.id}>
+                      {editingId === p.id ? (
+                        <td colSpan={5} className="packages-table-edit-cell">
+                          <form onSubmit={handleUpdate} className="packages-page-inline-form">
+                            <label><span>Name</span><input value={editName} onChange={(e) => setEditName(e.target.value)} required /></label>
+                            <label>
                               <span>Price</span>
-                              <span className="input-prefix-dollar">
-                                <span className="input-prefix-symbol" aria-hidden>$</span>
-                                <input type="number" min={0} step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required />
-                              </span>
+                              <input type="number" min={0} step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required />
                             </label>
-                            <button type="submit" className="auth-submit">Save</button>
-                            <button type="button" className="auth-submit" style={{ background: 'var(--theme-bg)' }} onClick={() => setEditingId(null)}>Cancel</button>
+                            <label>
+                              <span>Settlement</span>
+                              <input type="number" min={0} step="0.01" value={editSettlementAmount} onChange={(e) => setEditSettlementAmount(e.target.value)} placeholder="—" />
+                            </label>
+                            <div className="packages-page-inline-actions">
+                              <button type="submit" className="filter-btn packages-btn-save">Save</button>
+                              <button type="button" className="filter-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                            </div>
                           </form>
                         </td>
-                      </>
-                    ) : (
-                      <>
-                        <td><strong>{p.name}</strong></td>
-                        <td>{formatCurrency(p.price)}</td>
-                        <td>{p.isActive === false ? 'Inactive' : 'Active'}</td>
-                        <td>
-                          {p.isActive !== false && (
-                            <>
-                              <button type="button" className="auth-submit" style={{ marginRight: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }} onClick={() => { setEditingId(p.id); setEditName(p.name); setEditPrice(String(p.price)); setError(''); }}>Edit</button>
-                              {deleteConfirmId === p.id ? (
-                                <>
-                                  <button type="button" className="auth-submit" style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', background: '#ef4444' }} onClick={() => handleDelete(p.id)}>Confirm delete</button>
-                                  <button type="button" className="auth-submit" style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', marginLeft: '0.25rem' }} onClick={() => setDeleteConfirmId(null)}>Cancel</button>
-                                </>
-                              ) : (
-                                <button type="button" className="auth-submit" style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem', background: 'rgba(239,68,68,0.2)', color: '#fca5a5' }} onClick={() => setDeleteConfirmId(p.id)}>Delete</button>
-                              )}
-                            </>
-                          )}
-                        </td>
-                      </>
-                    )}
-                  </tr>
+                      ) : (
+                        <>
+                          <td className="packages-table-name"><strong>{p.name}</strong></td>
+                          <td className="packages-table-price num">{formatCurrency(p.price)}</td>
+                          <td className="packages-table-settlement num">{p.settlementAmount != null ? formatCurrency(p.settlementAmount) : '—'}</td>
+                          <td className="packages-table-status">
+                            <span className={`status-badge status-${p.isActive === false ? 'rejected' : 'approved'}`}>
+                              {p.isActive === false ? 'Inactive' : 'Active'}
+                            </span>
+                          </td>
+                          <td className="packages-table-actions">
+                            {p.isActive !== false && (
+                              <div className="packages-table-action-btns">
+                                <button type="button" className="filter-btn" onClick={() => { setEditingId(p.id); setEditName(p.name); setEditPrice(String(p.price)); setEditSettlementAmount(p.settlementAmount != null ? String(p.settlementAmount) : ''); setError(''); }}>Edit</button>
+                                {deleteConfirmId === p.id ? (
+                                  <>
+                                    <button type="button" className="filter-btn packages-btn-delete-confirm" onClick={() => handleDelete(p.id)}>Confirm delete</button>
+                                    <button type="button" className="filter-btn" onClick={() => setDeleteConfirmId(null)}>Cancel</button>
+                                  </>
+                                ) : (
+                                  <button type="button" className="filter-btn packages-btn-delete" onClick={() => setDeleteConfirmId(p.id)}>Delete</button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -183,7 +221,9 @@ export default function AdminPackagesPage() {
               </div>
             )}
           </>
-        ) : !showForm && <p className="vendors-empty">No packages. Add one so vendors can assign packages to customers.</p>}
+        ) : !showForm && (
+          <p className="packages-page-empty text-muted">No packages yet. Add one so vendors can assign packages to customers.</p>
+        )}
       </section>
     </div>
   );

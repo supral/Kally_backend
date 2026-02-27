@@ -1,15 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { getCustomers, createCustomer } from '../../../api/customers';
 import { getBranches } from '../../../api/branches';
 import { useAuth } from '../../../auth/hooks/useAuth';
-import { formatCurrency } from '../../../utils/money';
 import type { Customer, Branch } from '../../../types/common';
 
 export default function CustomersPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,29 +25,33 @@ export default function CustomersPage() {
   const PAGE_SIZE = 10;
   const basePath = isAdmin ? '/admin' : '/vendor';
 
-  const isPackageExpired = (expiry: string | undefined) => expiry && new Date(expiry) < new Date(new Date().setHours(0, 0, 0, 0));
-  const expiredCount = customers.filter((c) => c.customerPackage && isPackageExpired(c.customerPackageExpiry)).length;
-
-  const selectedBranchName = branchFilterId ? branches.find((b) => b.id === branchFilterId)?.name : null;
-  const byBranch = branchFilterId
-    ? customers.filter((c) => c.primaryBranch === selectedBranchName)
-    : customers;
-
-  const searchLower = searchQuery.trim().toLowerCase();
-  const filteredCustomers = searchLower
-    ? byBranch.filter((c) => {
-        const card = (c.membershipCardId || '').toLowerCase();
-        const n = (c.name || '').toLowerCase();
-        const p = (c.phone || '').toLowerCase();
-        const e = (c.email || '').toLowerCase();
-        return card.includes(searchLower) || n.includes(searchLower) || p.includes(searchLower) || e.includes(searchLower);
-      })
-    : byBranch;
-
-  const totalFiltered = filteredCustomers.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
-  const currentPage = Math.min(Math.max(1, page), totalPages);
-  const paginatedCustomers = filteredCustomers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const { filteredCustomers, totalFiltered, totalPages, currentPage, paginatedCustomers } = useMemo(() => {
+    const selectedBranchName = branchFilterId ? branches.find((b) => b.id === branchFilterId)?.name : null;
+    const byBranch = branchFilterId
+      ? customers.filter((c) => c.primaryBranch === selectedBranchName)
+      : customers;
+    const searchLower = searchQuery.trim().toLowerCase();
+    const filtered = searchLower
+      ? byBranch.filter((c) => {
+          const card = (c.membershipCardId || '').toLowerCase();
+          const n = (c.name || '').toLowerCase();
+          const p = (c.phone || '').toLowerCase();
+          const e = (c.email || '').toLowerCase();
+          return card.includes(searchLower) || n.includes(searchLower) || p.includes(searchLower) || e.includes(searchLower);
+        })
+      : byBranch;
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const current = Math.min(Math.max(1, page), pages);
+    const paginated = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+    return {
+      filteredCustomers: filtered,
+      totalFiltered: total,
+      totalPages: pages,
+      currentPage: current,
+      paginatedCustomers: paginated,
+    };
+  }, [customers, branches, branchFilterId, searchQuery, page, PAGE_SIZE]);
 
   useEffect(() => {
     setPage(1);
@@ -75,11 +77,6 @@ export default function CustomersPage() {
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [fetchCustomers]);
 
-  // Refetch when navigating back to this page (e.g. after renewing a membership)
-  useEffect(() => {
-    if (/^\/(admin|vendor)\/customers\/?$/.test(location.pathname)) fetchCustomers();
-  }, [location.pathname, fetchCustomers]);
-
   useEffect(() => {
     getBranches({ all: true }).then((r) => r.success && r.branches && setBranches(r.branches || []));
   }, []);
@@ -103,6 +100,26 @@ export default function CustomersPage() {
       setShowForm(false);
       getCustomers().then((r) => r.success && r.customers && setCustomers(r.customers));
     } else setError((res as { message?: string }).message || 'Failed to create');
+  }
+
+  function escapeCsvCell(value: string): string {
+    const s = String(value ?? '').replace(/"/g, '""');
+    return /[,"\n\r]/.test(s) ? `"${s}"` : s;
+  }
+
+  function exportToCsv() {
+    const headers = ['Card ID', 'Name', 'Phone', 'Email', 'Branch'];
+    const rows = filteredCustomers.map((c) =>
+      [c.membershipCardId ?? '—', c.name ?? '—', c.phone ?? '—', c.email ?? '—', c.primaryBranch ?? '—'].map(escapeCsvCell)
+    );
+    const csv = [headers.map(escapeCsvCell).join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `customers-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) {
@@ -142,11 +159,6 @@ export default function CustomersPage() {
             <button type="submit" className="auth-submit">Create customer</button>
           </form>
         )}
-        {isAdmin && expiredCount > 0 && (
-          <div className="package-expired-alert" role="alert">
-            <strong>Package expired:</strong> {expiredCount} customer{expiredCount !== 1 ? 's have' : ' has'} a package that has expired. Please renew from Memberships.
-          </div>
-        )}
         {error && <div className="auth-error vendors-error">{error}</div>}
         {customers.length > 0 ? (
           <>
@@ -166,17 +178,31 @@ export default function CustomersPage() {
                   </select>
                 </label>
               )}
-              <label className="customers-search-label">
-                <span>Search by Card ID, name, phone or email</span>
-                <input
-                  type="search"
-                  className="customers-search-input"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  aria-label="Search customers by card ID, name, phone or email"
-                />
-              </label>
+              <div className="customers-search-group">
+                <label className="customers-search-label">
+                  <span>Search by Card ID, name, phone or email</span>
+                  <input
+                    type="search"
+                    className="customers-search-input"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    aria-label="Search customers by card ID, name, phone or email"
+                  />
+                </label>
+                <button type="button" className="customers-search-btn" onClick={() => document.querySelector<HTMLInputElement>('.customers-search-input')?.focus()}>
+                  Search
+                </button>
+              </div>
+              <button
+                type="button"
+                className="customers-export-btn"
+                onClick={exportToCsv}
+                disabled={totalFiltered === 0}
+                title={totalFiltered === 0 ? 'No data to export' : 'Export filtered customers to CSV/Excel'}
+              >
+                Export to CSV / Excel
+              </button>
             </div>
             {totalFiltered > 0 && (
               <p className="customers-showing-count text-muted">
@@ -191,41 +217,24 @@ export default function CustomersPage() {
                     <th>Name</th>
                     <th>Phone</th>
                     <th>Email</th>
-                    {isAdmin && (
-                      <>
-                        <th>Package</th>
-                        <th>Price</th>
-                        <th>Expiry</th>
-                      </>
-                    )}
                     <th>Branch</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedCustomers.map((c) => {
-                    const expired = isAdmin && c.customerPackage && isPackageExpired(c.customerPackageExpiry);
-                    return (
-                      <tr key={c.id} className={expired ? 'package-expired-row' : ''}>
+                  {paginatedCustomers.map((c) => (
+                      <tr key={c.id}>
                         <td>{c.membershipCardId || '—'}</td>
                         <td><strong>{c.name}</strong></td>
                         <td>{c.phone}</td>
                         <td>{c.email || '—'}</td>
-                        {isAdmin && (
-                          <>
-                            <td>{c.customerPackage ? (expired ? <span>{c.customerPackage} <span className="status-badge status-expired">Expired</span></span> : c.customerPackage) : '—'}</td>
-                            <td>{c.customerPackagePrice != null ? formatCurrency(c.customerPackagePrice) : '—'}</td>
-                            <td>{c.customerPackageExpiry ? (expired ? <span className="text-expired">{c.customerPackageExpiry}</span> : c.customerPackageExpiry) : '—'}</td>
-                          </>
-                        )}
                         <td>{c.primaryBranch || '—'}</td>
                         <td>
                           <Link to={`${basePath}/customers/${c.id}`} className="filter-btn" style={{ marginRight: '0.5rem' }}>View</Link>
                           <button type="button" className="filter-btn" onClick={() => navigate(`${basePath}/customers/${c.id}?edit=1`)}>Edit</button>
                         </td>
                       </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
