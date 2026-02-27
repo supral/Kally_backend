@@ -13,11 +13,14 @@ const membershipSchema = new mongoose.Schema(
     packagePrice: { type: Number },
     discountAmount: { type: Number, default: 0, min: 0 },
     packageName: { type: String },
+    /** Per-credit settlement amount when used at different branch. Overrides global percentage if set. */
+    settlementAmount: { type: Number, min: 0 },
   },
   { timestamps: true }
 );
 
 membershipSchema.index({ customerId: 1 });
+membershipSchema.index({ customerId: 1, status: 1 });
 membershipSchema.index({ soldAtBranchId: 1 });
 membershipSchema.index({ soldAtBranchId: 1, purchaseDate: 1 });
 membershipSchema.index({ status: 1, soldAtBranchId: 1 });

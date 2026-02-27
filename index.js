@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const compression = require('compression');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const vendorRoutes = require('./routes/vendors');
@@ -19,6 +20,9 @@ const reportRoutes = require('./routes/reports');
 const settingsRoutes = require('./routes/settings');
 const loyaltyRoutes = require('./routes/loyalty');
 const packageRoutes = require('./routes/packages');
+const salesImageRoutes = require('./routes/salesImages');
+const manualSalesRoutes = require('./routes/manualSales');
+const ticketRoutes = require('./routes/tickets');
 
 connectDB();
 
@@ -43,6 +47,7 @@ app.use(cors({
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/auth', authRoutes);
@@ -60,6 +65,9 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/packages', packageRoutes);
+app.use('/api/sales-images', salesImageRoutes);
+app.use('/api/manual-sales', manualSalesRoutes);
+app.use('/api/tickets', ticketRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });

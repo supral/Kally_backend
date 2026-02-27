@@ -4,6 +4,8 @@ const packageSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     price: { type: Number, required: true, min: 0 },
+    /** Per-credit settlement amount when membership used at different branch. If set, overrides global settlement percentage. */
+    settlementAmount: { type: Number, min: 0 },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

@@ -17,18 +17,22 @@ router.get('/customers-memberships', async (req, res) => {
     const isPhone = /^\d+$/.test(term);
     const customerFilter = req.user.role === 'vendor' ? { createdBy: req.user._id } : {};
 
+    // Escape regex special chars to prevent ReDoS
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const safePattern = escapeRegex(term);
+
     let customers = [];
     if (isPhone) {
-      customers = await Customer.find({ ...customerFilter, phone: new RegExp(term, 'i') })
+      customers = await Customer.find({ ...customerFilter, phone: new RegExp(safePattern, 'i') })
         .limit(20)
         .lean();
     } else {
       customers = await Customer.find({
         ...customerFilter,
         $or: [
-          { name: new RegExp(term, 'i') },
-          { membershipCardId: new RegExp(term, 'i') },
-          { email: new RegExp(term, 'i') },
+          { name: new RegExp(safePattern, 'i') },
+          { membershipCardId: new RegExp(safePattern, 'i') },
+          { email: new RegExp(safePattern, 'i') },
         ],
       })
         .limit(20)

@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
         name: s.name,
         category: s.category,
         branch: s.branchId?.name,
+        branchId: s.branchId?._id || s.branchId || undefined,
         durationMinutes: s.durationMinutes,
         price: s.price,
       })),
@@ -56,6 +57,49 @@ router.post('/', authorize('admin'), async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to create service.' });
+  }
+});
+
+router.put('/:id', authorize('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, category, branchId, durationMinutes, price } = req.body;
+    const service = await Service.findByIdAndUpdate(
+      id,
+      {
+        ...(name != null && { name }),
+        ...(category !== undefined && { category: category || undefined }),
+        ...(branchId !== undefined && { branchId: branchId || undefined }),
+        ...(durationMinutes !== undefined && { durationMinutes: durationMinutes != null ? Number(durationMinutes) : undefined }),
+        ...(price !== undefined && { price: price != null ? Number(price) : 0 }),
+      },
+      { new: true }
+    );
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found.' });
+    res.json({
+      success: true,
+      service: {
+        id: service._id,
+        name: service.name,
+        category: service.category,
+        branchId: service.branchId,
+        durationMinutes: service.durationMinutes,
+        price: service.price,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to update service.' });
+  }
+});
+
+router.delete('/:id', authorize('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const service = await Service.findByIdAndUpdate(id, { isActive: false }, { new: true });
+    if (!service) return res.status(404).json({ success: false, message: 'Service not found.' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete service.' });
   }
 });
 

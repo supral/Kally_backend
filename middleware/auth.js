@@ -1,7 +1,11 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET must be set in production. Add it to your .env file.');
+}
+const JWT_SECRET_OR_FALLBACK = JWT_SECRET || 'dev-only-fallback-change-in-production';
 
 exports.protect = async (req, res, next) => {
   let token;
@@ -12,7 +16,7 @@ exports.protect = async (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Not authorized. Please login.' });
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET_OR_FALLBACK);
     const user = await User.findById(decoded.id).select('-password').populate('branchId');
     if (!user) {
       return res.status(401).json({ success: false, message: 'User not found.' });
