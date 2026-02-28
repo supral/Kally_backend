@@ -61,7 +61,7 @@ export default function TicketsPage() {
     if (imageFile) {
       imageBase64 = await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string)?.split(',')[1] || undefined);
+        reader.onload = () => resolve((reader.result as string) || undefined);
         reader.readAsDataURL(imageFile);
       });
     }
@@ -95,7 +95,7 @@ export default function TicketsPage() {
         <div>
           <h1 className="tickets-hero-title">Tickets</h1>
           <p className="tickets-hero-subtitle">
-            Communication channel between admin and branches. Create tickets, attach images, and reply in thread.
+            Communication channel between admin and branches. Create tickets, reply in thread, and attach images (screenshots, photos) to messages.
           </p>
         </div>
         <button
@@ -156,12 +156,13 @@ export default function TicketsPage() {
               />
             </div>
             <div className="tickets-field">
-              <label>Image (optional)</label>
+              <label>Image <span className="tickets-field-hint">— Attach screenshots or photos (optional but recommended)</span></label>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                aria-label="Attach image"
               />
               {imageFile && (
                 <span className="tickets-file-name">

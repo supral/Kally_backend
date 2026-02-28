@@ -12,7 +12,7 @@ export default function AdminDashboard() {
       <div className="stats-grid">
         <div className="stat-card">
           <span className="stat-value">—</span>
-          <span className="stat-label">Total Vendors</span>
+          <span className="stat-label">Branch Staff</span>
         </div>
         <div className="stat-card">
           <span className="stat-value">—</span>

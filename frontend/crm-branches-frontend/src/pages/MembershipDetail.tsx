@@ -92,10 +92,6 @@ export default function MembershipDetail() {
           <dd>{remaining}</dd>
           <dt>Sold at branch</dt>
           <dd>{membership!.soldAtBranch || '—'}</dd>
-          <dt>Purchase date</dt>
-          <dd>{membership!.purchaseDate ? new Date(membership!.purchaseDate).toLocaleDateString() : '—'}</dd>
-          <dt>Expiry</dt>
-          <dd>{membership!.expiryDate ? new Date(membership!.expiryDate).toLocaleDateString() : '—'}</dd>
           <dt>Status</dt>
           <dd><span className={`status-badge status-${membership!.status === 'active' ? 'approved' : membership!.status === 'used' ? 'rejected' : 'pending'}`}>{membership!.status}</span></dd>
         </dl>

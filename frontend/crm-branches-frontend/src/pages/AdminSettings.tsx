@@ -215,7 +215,7 @@ export default function AdminSettings() {
       <section className="content-card" style={{ marginTop: '1rem' }}>
         <h3>Services</h3>
         <p className="text-muted">
-          Add services that can be selected when booking appointments or converting leads. Leave branch blank for services available at all branches.
+          Add and manage services here. They appear in <strong>Book appointment</strong> (Appointments page) and in <strong>Leads</strong> (when adding a lead or filtering by service). Leave branch blank for a service available at all branches.
         </p>
         {message && <p className="text-muted" style={{ marginTop: '0.5rem' }}>{message}</p>}
         <form onSubmit={handleAddService} className="auth-form" style={{ maxWidth: '480px', marginTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>

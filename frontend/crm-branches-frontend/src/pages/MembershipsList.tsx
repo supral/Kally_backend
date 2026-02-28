@@ -260,10 +260,7 @@ export default function MembershipsList() {
   return (
     <div className="dashboard-content memberships-page">
       <header className="page-hero memberships-page-hero">
-        <div>
-          <h1 className="page-hero-title">Memberships</h1>
-          <p className="page-hero-subtitle">Assign memberships to customers. View and use credits below.</p>
-        </div>
+        <h1 className="page-hero-title">Memberships</h1>
         <button type="button" className="auth-submit memberships-create-btn" onClick={() => setShowCreateForm(!showCreateForm)}>
           {showCreateForm ? 'Cancel' : 'Create new membership'}
         </button>
@@ -335,6 +332,7 @@ export default function MembershipsList() {
         </section>
       )}
 
+      <div className="memberships-filters-and-list">
       <section className="content-card memberships-search-card">
         <label className="memberships-search-label" htmlFor="memberships-search-input">
           Search memberships
@@ -360,7 +358,6 @@ export default function MembershipsList() {
             <option value="">All statuses</option>
             <option value="active">Active</option>
             <option value="used">Used</option>
-            <option value="expired">Expired</option>
           </select>
           {totalFiltered > 0 && (
             <span className="memberships-search-count text-muted">
@@ -411,7 +408,7 @@ export default function MembershipsList() {
 
       {error && <div className="auth-error vendors-error">{error}</div>}
       <section className="content-card memberships-list-card">
-        <h2 className="page-section-title">Membership list</h2>
+        <h2 className="page-section-title" style={{ marginTop: 0 }}>Membership list</h2>
         {loading ? (
           <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
         ) : memberships.length === 0 ? (
@@ -438,6 +435,7 @@ export default function MembershipsList() {
                     className="memberships-row-clickable"
                     role="button"
                     tabIndex={0}
+                    aria-label={`View membership for ${m.customer?.name || 'customer'}`}
                     onClick={() => navigate(`${basePath}/memberships/${m.id}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`${basePath}/memberships/${m.id}`); } }}
                   >
@@ -485,6 +483,7 @@ export default function MembershipsList() {
           </>
         )}
       </section>
+      </div>
     </div>
   );
 }

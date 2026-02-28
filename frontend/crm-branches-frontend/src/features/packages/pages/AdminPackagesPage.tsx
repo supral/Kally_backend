@@ -124,17 +124,18 @@ export default function AdminPackagesPage() {
         <section className="content-card packages-page-form-card">
           <h2 className="packages-page-form-title">New package</h2>
           <form onSubmit={handleCreate} className="packages-page-form">
-            <label>
+            <label className="packages-page-name-field">
               <span>Package name</span>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Basic, Premium" required />
             </label>
-            <label>
+            <label className="packages-page-price-field">
               <span>Price</span>
               <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" required />
             </label>
-            <label>
-              <span>Settlement amount (per service)</span>
-              <input type="number" min={0} step="0.01" value={settlementAmount} onChange={(e) => setSettlementAmount(e.target.value)} placeholder="e.g. 5.00 (optional)" />
+            <label className="packages-page-settlement-field">
+              <span>Settlement price (per credit)</span>
+              <input type="number" min={0} step="0.01" value={settlementAmount} onChange={(e) => setSettlementAmount(e.target.value)} placeholder="e.g. 5.00 (optional)" title="Amount paid per credit when used at another branch. Overrides Settings % if set." />
+              <span className="packages-page-field-hint">Amount per credit at another branch. Overrides Settings % if set.</span>
             </label>
             <button type="submit" className="auth-submit packages-page-submit">Create package</button>
           </form>
@@ -155,7 +156,7 @@ export default function AdminPackagesPage() {
                   <tr>
                     <th className="packages-table-name">Name</th>
                     <th className="packages-table-price">Price</th>
-                    <th className="packages-table-settlement">Settlement</th>
+                    <th className="packages-table-settlement">Settlement price</th>
                     <th className="packages-table-status">Status</th>
                     <th className="packages-table-actions">Actions</th>
                   </tr>
@@ -172,8 +173,8 @@ export default function AdminPackagesPage() {
                               <input type="number" min={0} step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required />
                             </label>
                             <label>
-                              <span>Settlement</span>
-                              <input type="number" min={0} step="0.01" value={editSettlementAmount} onChange={(e) => setEditSettlementAmount(e.target.value)} placeholder="—" />
+                              <span>Settlement price</span>
+                              <input type="number" min={0} step="0.01" value={editSettlementAmount} onChange={(e) => setEditSettlementAmount(e.target.value)} placeholder="—" title="Per credit at another branch" />
                             </label>
                             <div className="packages-page-inline-actions">
                               <button type="submit" className="filter-btn packages-btn-save">Save</button>

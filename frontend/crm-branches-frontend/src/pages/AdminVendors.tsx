@@ -36,7 +36,7 @@ export default function AdminVendors() {
     const res = await getVendors(status);
     setLoading(false);
     if (res.success && res.vendors) setVendors(res.vendors);
-    else setError(res.message || 'Failed to load vendors');
+    else setError(res.message || 'Failed to load branch staff');
   }
 
   useEffect(() => {
@@ -188,7 +188,7 @@ export default function AdminVendors() {
       loadVendors();
       setSelectedVendor((prev) => prev && prev.id === selectedVendor.id ? { ...prev, ...res.vendor } : prev);
     } else {
-      setEditError(res.message || 'Failed to update vendor');
+      setEditError(res.message || 'Failed to update');
     }
   };
 
@@ -198,8 +198,8 @@ export default function AdminVendors() {
     <div className="dashboard-content">
       <section className="content-card">
         <div className="vendors-header">
-          <h2>Vendor management</h2>
-          <p className="vendors-subtitle">Approve vendors and assign each vendor to a branch. Vendors only see data for their assigned branch.</p>
+          <h2>Branch Staff</h2>
+          <p className="vendors-subtitle">Approve branch staff and assign each to a branch. Branch staff only see data for their assigned branch.</p>
         </div>
 
         <div className="vendors-filters">
@@ -249,7 +249,7 @@ export default function AdminVendors() {
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
-                  <th>Vendor name</th>
+                  <th>Staff name</th>
                   <th>Branch</th>
                   <th>Approval</th>
                   <th>Blocked</th>
@@ -278,7 +278,7 @@ export default function AdminVendors() {
                         disabled={assigningBranchId !== null}
                         className="vendor-branch-select"
                         aria-label={`Assign branch for ${v.name}`}
-                        title="Assign branch – vendor will only see this branch"
+                        title="Assign branch – staff will only see this branch"
                       >
                         <option value="">No branch assigned</option>
                         {branches.map((b) => (
@@ -365,7 +365,7 @@ export default function AdminVendors() {
             aria-labelledby="vendor-modal-title"
           >
             <div className="vendor-modal-header">
-              <h2 id="vendor-modal-title">Vendor details</h2>
+              <h2 id="vendor-modal-title">Branch staff details</h2>
               <button
                 type="button"
                 className="vendor-modal-close"
@@ -404,7 +404,7 @@ export default function AdminVendors() {
                   />
                 </label>
                 <label className="auth-form-label">
-                  <span>Vendor / business name</span>
+                  <span>Staff / business name</span>
                   <input
                     type="text"
                     value={editVendorName}
@@ -425,7 +425,7 @@ export default function AdminVendors() {
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
-                  <span className="text-muted" style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.85rem' }}>Vendor will only see data for this branch.</span>
+                  <span className="text-muted" style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.85rem' }}>Staff will only see data for this branch.</span>
                 </label>
                 <div className="vendor-modal-actions">
                   <button type="button" className="filter-btn" onClick={() => setEditingVendor(false)}>Cancel</button>
@@ -441,7 +441,7 @@ export default function AdminVendors() {
                   <dd>{vendorDetail.name}</dd>
                   <dt>Email</dt>
                   <dd>{vendorDetail.email}</dd>
-                  <dt>Vendor / business name</dt>
+                  <dt>Staff / business name</dt>
                   <dd>{vendorDetail.vendorName || '—'}</dd>
                   <dt>Branch</dt>
                   <dd>{vendorDetail.branchName || '—'}</dd>

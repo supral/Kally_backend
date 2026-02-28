@@ -45,7 +45,7 @@ export default function CreateVendorPage() {
       setPassword('');
       setVendorName('');
       setBranchId('');
-      setSuccess('Vendor/Staff account created. They can now log in with this email and password and will be redirected to the vendor dashboard.');
+      setSuccess('Branch staff account created. They can now log in with this email and password and will be redirected to their dashboard.');
     } else {
       setError(res.message || 'Failed to create vendor.');
     }
@@ -54,7 +54,7 @@ export default function CreateVendorPage() {
   return (
     <div className="dashboard-content">
       <header className="page-hero">
-        <h1 className="page-hero-title">Create Vendor / Staff</h1>
+        <h1 className="page-hero-title">Add Branch Staff</h1>
         <p className="page-hero-subtitle">Register a new vendor or staff account. They will be stored as role vendor and can log in to access the vendor dashboard.</p>
       </header>
       <section className="content-card">
@@ -73,7 +73,7 @@ export default function CreateVendorPage() {
           </label>
           <label>
             <span>Display name (optional)</span>
-            <input value={vendorName} onChange={(e) => setVendorName(e.target.value)} placeholder="Vendor / business name" />
+            <input value={vendorName} onChange={(e) => setVendorName(e.target.value)} placeholder="Staff / business name" />
           </label>
           <label>
             <span>Branch (optional)</span>
@@ -87,7 +87,7 @@ export default function CreateVendorPage() {
           {error && <div className="auth-error vendors-error">{error}</div>}
           {success && <div className="auth-success" style={{ padding: '0.75rem', marginBottom: '1rem', borderRadius: 8, background: 'rgba(34, 197, 94, 0.15)', color: '#86efac' }}>{success}</div>}
           <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create Vendor / Staff'}
+            {submitting ? 'Creating…' : 'Add Branch Staff'}
           </button>
         </form>
       </section>

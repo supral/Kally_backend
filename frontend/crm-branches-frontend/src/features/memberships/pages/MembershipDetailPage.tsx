@@ -24,7 +24,6 @@ export default function MembershipDetailPage() {
   const [renewing, setRenewing] = useState(false);
   const [renewPrice, setRenewPrice] = useState('0');
   const [renewCredits, setRenewCredits] = useState('');
-  const [renewExpiry, setRenewExpiry] = useState('');
   const basePath = user?.role === 'admin' ? '/admin' : '/vendor';
 
   useEffect(() => {
@@ -107,7 +106,6 @@ export default function MembershipDetailPage() {
     const res = await renewMembership(id, {
       packagePrice: price,
       totalCredits: credits,
-      expiryDate: renewExpiry.trim() || undefined,
     });
     setRenewing(false);
     if (res.success && res.membership) {
@@ -175,24 +173,12 @@ export default function MembershipDetailPage() {
             <span className="membership-detail-label">Sold at</span>
             <span className="membership-detail-value">{membership!.soldAtBranch || '—'}</span>
           </div>
-          <div className="membership-detail-field">
-            <span className="membership-detail-label">Purchase date</span>
-            <span className="membership-detail-value">{membership!.purchaseDate ? new Date(membership!.purchaseDate).toLocaleDateString() : '—'}</span>
-          </div>
-          <div className="membership-detail-field">
-            <span className="membership-detail-label">Expiry</span>
-            <span className="membership-detail-value">{membership!.expiryDate ? new Date(membership!.expiryDate).toLocaleDateString() : '—'}</span>
-          </div>
         </div>
 
         {(membership!.status === 'expired' || membership!.status === 'used') && (
           <div className="membership-renew-section">
             <div className="membership-renew-alert" role="alert">
-              {membership!.status === 'expired' ? (
-                <p className="membership-renew-title">This membership has expired.</p>
-              ) : (
-                <p className="membership-renew-title">This membership has been fully used.</p>
-              )}
+              <p className="membership-renew-title">All credits have been used.</p>
               {user?.role !== 'admin' && (
                 <p className="membership-renew-hint">Contact your admin to renew.</p>
               )}
@@ -209,10 +195,6 @@ export default function MembershipDetailPage() {
                 <label>
                   <span>Total credits</span>
                   <input type="number" min={1} value={renewCredits} onChange={(e) => setRenewCredits(e.target.value)} placeholder={String(membership!.totalCredits)} />
-                </label>
-                <label>
-                  <span>Expiry date (optional)</span>
-                  <input type="date" value={renewExpiry} onChange={(e) => setRenewExpiry(e.target.value)} />
                 </label>
                 <button type="submit" className="auth-submit" disabled={renewing}>{renewing ? 'Renewing…' : 'Renew'}</button>
               </form>
@@ -269,7 +251,6 @@ export default function MembershipDetailPage() {
                   <div className="membership-usage-body">
                     <span className="membership-usage-credits">{u.creditsUsed} credit{u.creditsUsed !== 1 ? 's' : ''} used</span>
                     {u.usedBy && <span className="membership-usage-by"> · {u.usedBy}</span>}
-                    {u.serviceDetails && <p className="membership-usage-details">{u.serviceDetails}</p>}
                     {u.notes && <p className="membership-usage-notes text-muted">{u.notes}</p>}
                   </div>
                 </div>

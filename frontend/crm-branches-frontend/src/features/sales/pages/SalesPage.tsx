@@ -52,16 +52,17 @@ export default function SalesPage() {
   // Manual sales – dashboard level (for Total Sales calc) and branch details
   const [dashboardManualSales, setDashboardManualSales] = useState<ManualSale[]>([]);
   const [dashboardManualSalesLoading, setDashboardManualSalesLoading] = useState(false);
-  const [manualSales, setManualSales] = useState<ManualSale[]>([]);
-  const [manualSalesLoading, setManualSalesLoading] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addDate, setAddDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [addAmount, setAddAmount] = useState('');
-  const [addImage, setAddImage] = useState<File | null>(null);
-  const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addError, setAddError] = useState('');
   const [viewImage, setViewImage] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Add manual sale modal (top-right button) – only on this details page
+  const [showAddManualModal, setShowAddManualModal] = useState(false);
+  const [addModalBranchId, setAddModalBranchId] = useState('');
+  const [addModalDate, setAddModalDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [addModalAmount, setAddModalAmount] = useState('');
+  const [addModalImage, setAddModalImage] = useState<File | null>(null);
+  const [addModalSubmitting, setAddModalSubmitting] = useState(false);
+  const [addModalError, setAddModalError] = useState('');
 
   const isAdmin = user?.role === 'admin';
   const selectedPackageName = packageId ? packages.find((p) => p.id === packageId)?.name : undefined;
@@ -81,19 +82,6 @@ export default function SalesPage() {
   useEffect(() => {
     fetchDashboardManualSales();
   }, [fetchDashboardManualSales]);
-
-  const fetchManualSales = useCallback(() => {
-    if (!selectedBranchId) return;
-    setManualSalesLoading(true);
-    getManualSales({
-      from: dateFrom,
-      to: dateTo,
-      branchId: selectedBranchId,
-    }).then((r) => {
-      setManualSalesLoading(false);
-      if (r.success) setManualSales(r.sales || []);
-    });
-  }, [selectedBranchId, dateFrom, dateTo]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -128,7 +116,6 @@ export default function SalesPage() {
   useEffect(() => {
     if (!selectedBranchId) {
       setDetailData(null);
-      setManualSales([]);
       return;
     }
     setDetailLoading(true);
@@ -145,7 +132,7 @@ export default function SalesPage() {
       else setDetailData(null);
     });
     fetchManualSales();
-  }, [selectedBranchId, dateFrom, dateTo, selectedPackageName, detailBreakdownPage, fetchManualSales]);
+  }, [selectedBranchId, dateFrom, dateTo, selectedPackageName, detailBreakdownPage]);
 
   const selectedBranchName =
     selectedBranchId &&
@@ -177,49 +164,51 @@ export default function SalesPage() {
   const totalManualSalesAmount = dashboardManualSales.reduce((s, m) => s + (m.amount ?? 0), 0);
   const totalSales = membershipSales + totalManualSalesAmount;
 
-  async function handleAddSale(e: React.FormEvent) {
+  async function handleAddManualModalSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setAddError('');
-    const amount = parseFloat(addAmount);
+    setAddModalError('');
+    const amount = parseFloat(addModalAmount);
     if (isNaN(amount) || amount < 0) {
-      setAddError('Enter a valid amount (0 or more).');
+      setAddModalError('Enter a valid amount (0 or more).');
       return;
     }
-    if (!selectedBranchId) {
-      setAddError('Branch is required.');
+    const targetBranchId = isAdmin ? addModalBranchId : (user?.branchId ?? '');
+    if (!targetBranchId) {
+      setAddModalError('Please select a branch.');
       return;
     }
-    if (!addDate) {
-      setAddError('Date is required.');
+    if (!addModalDate) {
+      setAddModalError('Date is required.');
       return;
     }
 
     let imageBase64: string | undefined;
-    if (addImage) {
+    if (addModalImage) {
       const base64 = await new Promise<string | null>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve((reader.result as string)?.split(',')[1] || null);
-        reader.readAsDataURL(addImage);
+        reader.readAsDataURL(addModalImage);
       });
       if (base64) imageBase64 = base64;
     }
 
-    setAddSubmitting(true);
+    setAddModalSubmitting(true);
     const r = await createManualSale({
-      branchId: selectedBranchId,
-      date: addDate,
+      branchId: targetBranchId,
+      date: addModalDate,
       amount,
       imageBase64,
     });
-    setAddSubmitting(false);
+    setAddModalSubmitting(false);
 
     if (r.success) {
-      setShowAddForm(false);
-      setAddAmount('');
-      setAddDate(new Date().toISOString().slice(0, 10));
-      setAddImage(null);
-      fetchManualSales();
-    } else setAddError(r.message || 'Failed to record sale');
+      setShowAddManualModal(false);
+      setAddModalAmount('');
+      setAddModalDate(new Date().toISOString().slice(0, 10));
+      setAddModalImage(null);
+      setAddModalBranchId(branchId || '');
+      fetchDashboardManualSales();
+    } else setAddModalError(r.message || 'Failed to record sale');
   }
 
   async function handleViewImage(id: string) {
@@ -243,18 +232,36 @@ export default function SalesPage() {
     setDeletingId(id);
     const r = await deleteManualSale(id);
     setDeletingId(null);
-    if (r.success) fetchManualSales();
+    if (r.success) fetchDashboardManualSales();
   }
 
   const filteredBreakdown = detailData?.breakdown ?? [];
 
   return (
     <div className="dashboard-content sales-page">
-      <header className="page-hero">
-        <h1 className="page-hero-title">Sales dashboard</h1>
-        <p className="page-hero-subtitle">
-          Full visibility across branches: revenue, memberships, appointments, and manual sales.
-        </p>
+      <header className="page-hero sales-page-hero">
+        <div className="sales-page-hero-top">
+          <div>
+            <h1 className="page-hero-title">Sales dashboard</h1>
+            <p className="page-hero-subtitle">
+              Revenue, memberships, and manual sales. Use date and package filters below.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="auth-submit memberships-create-btn sales-add-manual-btn"
+            onClick={() => {
+              setShowAddManualModal(true);
+              setAddModalError('');
+              setAddModalBranchId(branchId || (user?.branchId ?? ''));
+              setAddModalDate(new Date().toISOString().slice(0, 10));
+              setAddModalAmount('');
+              setAddModalImage(null);
+            }}
+          >
+            + Add manual sale
+          </button>
+        </div>
         <div className="sales-dashboard-filters">
           <label>
             <span>From</span>
@@ -289,10 +296,25 @@ export default function SalesPage() {
         </div>
       </header>
 
-      {/* Summary stats */}
+      {/* Sales summary: formula + Membership only + Daily amount + Total (one card, fit on screen) */}
       {!overviewLoading && (isAdmin || data) && (
-        <section className="content-card" style={{ marginBottom: '1.25rem' }}>
-          <div className="owner-hero-stats" style={{ marginTop: 0, marginBottom: 0 }}>
+        <section className="content-card sales-summary-card">
+          <p className="text-muted" style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', fontWeight: 500 }}>
+            <strong>Total Sales = Membership Sales + Daily Sales Amount.</strong> Daily sales are manually updated below.
+          </p>
+          <div className="owner-hero-stats" style={{ marginTop: 0, marginBottom: 0, flexWrap: 'wrap' }}>
+            <div className="owner-hero-stat">
+              <span className="owner-hero-stat-value">{loading ? '…' : formatCurrency(membershipSales)}</span>
+              <span className="owner-hero-stat-label">Membership sales only {isAdmin && !branchId ? '(all)' : ''}</span>
+            </div>
+            <div className="owner-hero-stat">
+              <span className="owner-hero-stat-value">{loading || dashboardManualSalesLoading ? '…' : formatCurrency(totalManualSalesAmount)}</span>
+              <span className="owner-hero-stat-label">Daily sales (manual) {isAdmin && !branchId ? '(all)' : ''}</span>
+            </div>
+            <div className="owner-hero-stat owner-hero-stat-highlight">
+              <span className="owner-hero-stat-value">{loading || dashboardManualSalesLoading ? '…' : formatCurrency(totalSales)}</span>
+              <span className="owner-hero-stat-label">Total sales {isAdmin && !branchId ? '(all)' : ''}</span>
+            </div>
             {isAdmin && (
               <>
                 <div className="owner-hero-stat">
@@ -305,47 +327,17 @@ export default function SalesPage() {
                 </div>
                 <div className="owner-hero-stat">
                   <span className="owner-hero-stat-value">{formatNumber(totalAppointments)}</span>
-                  <span className="owner-hero-stat-label">Appointments this month</span>
+                  <span className="owner-hero-stat-label">Appointments (month)</span>
                 </div>
               </>
             )}
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading || dashboardManualSalesLoading ? '…' : formatCurrency(membershipSales)}
-              </span>
-              <span className="owner-hero-stat-label">Membership sales {isAdmin && !branchId ? '(all branches)' : ''}</span>
-            </div>
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading || dashboardManualSalesLoading ? '…' : formatCurrency(totalSales)}
-              </span>
-              <span className="owner-hero-stat-label">Total sales (membership + manual) {isAdmin && !branchId ? '(all branches)' : ''}</span>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Membership sales section */}
-      {(isAdmin || data) && (
-        <section className="content-card" style={{ marginBottom: '1.25rem' }}>
-          <h2 className="page-section-title" style={{ marginTop: 0 }}>Membership sales</h2>
-          <p className="text-muted" style={{ marginBottom: '1rem' }}>
-            Revenue from membership packages sold. Total sales above also includes manually recorded daily sales amounts.
-          </p>
-          <div className="owner-hero-stats" style={{ marginTop: 0, marginBottom: 0, flexWrap: 'wrap' }}>
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading ? '…' : formatCurrency(membershipSales)}
-              </span>
-              <span className="owner-hero-stat-label">Membership sales total {isAdmin && !branchId ? '(all branches)' : ''}</span>
-            </div>
           </div>
         </section>
       )}
 
       {/* Cross-branch settlement */}
       {isAdmin && settlementSummary.length > 0 && (
-        <section className="content-card owner-settlement" style={{ marginBottom: '1.25rem' }}>
+        <section className="content-card owner-settlement">
           <h2 className="owner-section-title">Cross-branch settlement</h2>
           <p className="owner-section-desc">Outstanding balances for membership services delivered at another branch.</p>
           <div className="owner-settlement-table-wrap">
@@ -373,15 +365,91 @@ export default function SalesPage() {
         </section>
       )}
 
-      {/* Performance by branch – consolidated (no Leads, Leads booked, Lead conversion) */}
+      {/* Manual sales – all branches, date filter from above; view/download image on click; admin delete */}
+      <section className="content-card manual-sales-section">
+        <h2 className="page-section-title" style={{ marginTop: 0 }}>Manual sales</h2>
+        <p className="text-muted" style={{ marginBottom: '0.5rem' }}>
+          Daily sales added manually by branches. Filter by date range above. Click date or amount to view/download receipt.
+        </p>
+        {dashboardManualSalesLoading ? (
+          <div className="loading-placeholder">Loading…</div>
+        ) : dashboardManualSales.length === 0 ? (
+          <p className="text-muted" style={{ margin: 0 }}>No manual sales in the selected date range.</p>
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Branch</th>
+                  <th>Date</th>
+                  <th className="num">Amount</th>
+                  <th>Receipt</th>
+                  {isAdmin && <th></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardManualSales.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.branchName}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="branch-name-link"
+                        onClick={() => s.hasImage && handleViewImage(s.id)}
+                        title={s.hasImage ? 'View receipt' : undefined}
+                      >
+                        {new Date(s.date).toLocaleDateString()}
+                      </button>
+                    </td>
+                    <td className="num">
+                      <button
+                        type="button"
+                        className="branch-name-link"
+                        onClick={() => s.hasImage && handleViewImage(s.id)}
+                        title={s.hasImage ? 'View receipt' : undefined}
+                      >
+                        {formatCurrency(s.amount)}
+                      </button>
+                    </td>
+                    <td>
+                      {s.hasImage ? (
+                        <span style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" className="btn-link" onClick={() => handleViewImage(s.id)}>View</button>
+                          <button type="button" className="btn-link" onClick={() => handleDownloadImage(s.id)}>Download</button>
+                        </span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    {isAdmin && (
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          onClick={() => handleDelete(s.id)}
+                          disabled={!!deletingId}
+                        >
+                          {deletingId === s.id ? '…' : 'Delete'}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Membership by branch – same as previous “Performance by branch”; no Leads columns */}
       <section className="content-card">
         {error && <div className="auth-error">{error}</div>}
         {loading ? (
           <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
         ) : (
           <>
-            <h2 className="page-section-title" style={{ marginTop: 0 }}>Performance by branch</h2>
-            <p className="text-muted" style={{ marginBottom: '0.75rem' }}>Click a branch name to see details and manual sales.</p>
+            <h2 className="page-section-title" style={{ marginTop: 0 }}>Membership by branch</h2>
+            <p className="text-muted" style={{ marginBottom: '0.75rem' }}>Click a branch to see membership breakdown.</p>
             {isAdmin && mergedByBranch.length > 0 ? (
               <div className="data-table-wrap">
                 <table className="data-table">
@@ -389,7 +457,7 @@ export default function SalesPage() {
                     <tr>
                       <th>Branch</th>
                       <th className="num">Memberships sold</th>
-                      <th className="num">Total sales</th>
+                      <th className="num">Membership sales</th>
                       <th className="num">Appointments this month</th>
                       <th className="num">Completed</th>
                     </tr>
@@ -444,13 +512,13 @@ export default function SalesPage() {
               <p className="vendors-empty">No data for this period.</p>
             )}
 
-            {/* Branch details panel – with manual sales */}
+            {/* Branch details panel – membership breakdown only (manual sales are in the table above) */}
             {selectedBranchId && (
               <div
                 className="page-section content-card sales-branch-detail"
                 style={{
-                  marginTop: '1.5rem',
-                  padding: '1.25rem',
+                  marginTop: '1rem',
+                  padding: '1rem',
                   background: 'var(--theme-bg-subtle)',
                   borderRadius: 8,
                 }}
@@ -460,164 +528,27 @@ export default function SalesPage() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginBottom: '1rem',
+                    marginBottom: '0.75rem',
                     flexWrap: 'wrap',
-                    gap: '0.75rem',
+                    gap: '0.5rem',
                   }}
                 >
                   <h3 className="page-section-title" style={{ margin: 0 }}>
-                    Details for {selectedBranchName ?? 'branch'}
+                    Membership breakdown – {selectedBranchName ?? 'branch'}
                   </h3>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="auth-submit memberships-create-btn"
-                      onClick={() => {
-                        setShowAddForm(!showAddForm);
-                        setAddError('');
-                      }}
-                    >
-                      {showAddForm ? 'Cancel' : '+ Add manual sale'}
-                    </button>
-                    <button
-                      type="button"
-                      className="filter-btn"
-                      onClick={() => {
-                        setSelectedBranchId(null);
-                        setDetailBreakdownPage(1);
-                        setShowAddForm(false);
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-
-                {showAddForm && (
-                  <form onSubmit={handleAddSale} className="sales-record-form" style={{ marginBottom: '1.5rem', maxWidth: '420px' }}>
-                    <div className="sales-record-fields">
-                      <div className="sales-record-field">
-                        <label htmlFor="add-date">Date</label>
-                        <input
-                          id="add-date"
-                          type="date"
-                          value={addDate}
-                          onChange={(e) => setAddDate(e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div className="sales-record-field">
-                        <label htmlFor="add-amount">Amount ($)</label>
-                        <input
-                          id="add-amount"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={addAmount}
-                          onChange={(e) => setAddAmount(e.target.value)}
-                          placeholder="e.g. 150.00"
-                          required
-                        />
-                      </div>
-                      <div className="sales-record-field">
-                        <label htmlFor="add-image">Receipt (optional)</label>
-                        <input
-                          id="add-image"
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => setAddImage(e.target.files?.[0] || null)}
-                        />
-                      </div>
-                    </div>
-                    {addError && <div className="alert alert-error sales-record-error">{addError}</div>}
-                    <div className="sales-record-actions">
-                      <button type="submit" className="btn-primary" disabled={addSubmitting}>
-                        {addSubmitting ? 'Saving…' : 'Save'}
-                      </button>
-                      <button type="button" className="btn-secondary" onClick={() => setShowAddForm(false)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {/* Manual sales table – date, amount, view/download, delete */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <h4 className="page-section-title" style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Manual sales</h4>
-                  {manualSalesLoading ? (
-                    <div className="loading-placeholder">Loading…</div>
-                  ) : manualSales.length === 0 ? (
-                    <p className="text-muted" style={{ margin: 0 }}>No manual sales for this branch in the selected period.</p>
-                  ) : (
-                    <div className="data-table-wrap">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th className="num">Amount</th>
-                            <th>Receipt</th>
-                            {isAdmin && <th></th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {manualSales.map((s) => (
-                            <tr key={s.id}>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="branch-name-link"
-                                  onClick={() => s.hasImage && handleViewImage(s.id)}
-                                  title={s.hasImage ? 'Click to view receipt' : undefined}
-                                >
-                                  {new Date(s.date).toLocaleDateString()}
-                                </button>
-                              </td>
-                              <td className="num">
-                                <button
-                                  type="button"
-                                  className="branch-name-link"
-                                  onClick={() => s.hasImage && handleViewImage(s.id)}
-                                  title={s.hasImage ? 'Click to view receipt' : undefined}
-                                >
-                                  {formatCurrency(s.amount)}
-                                </button>
-                              </td>
-                              <td>
-                                {s.hasImage ? (
-                                  <span style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <button type="button" className="btn-link" onClick={() => handleViewImage(s.id)}>
-                                      View
-                                    </button>
-                                    <button type="button" className="btn-link" onClick={() => handleDownloadImage(s.id)}>
-                                      Download
-                                    </button>
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">—</span>
-                                )}
-                              </td>
-                              {isAdmin && (
-                                <td>
-                                  <button
-                                    type="button"
-                                    className="btn-danger btn-sm"
-                                    onClick={() => handleDelete(s.id)}
-                                    disabled={!!deletingId}
-                                  >
-                                    {deletingId === s.id ? '…' : 'Delete'}
-                                  </button>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    className="filter-btn"
+                    onClick={() => {
+                      setSelectedBranchId(null);
+                      setDetailBreakdownPage(1);
+                    }}
+                  >
+                    Close
+                  </button>
                 </div>
 
                 {/* Customer/package breakdown */}
-                <h4 className="page-section-title" style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Membership breakdown</h4>
                 {detailLoading ? (
                   <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
                 ) : (
@@ -678,6 +609,82 @@ export default function SalesPage() {
         )}
       </section>
 
+      {/* Add manual sale modal */}
+      {showAddManualModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => !addModalSubmitting && setShowAddManualModal(false)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Escape' && !addModalSubmitting && setShowAddManualModal(false)}
+        >
+          <div className="modal-content sales-add-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="page-section-title" style={{ marginTop: 0 }}>Add manual sale</h3>
+            <form onSubmit={handleAddManualModalSubmit} className="sales-record-form">
+              <div className="sales-record-fields">
+                {isAdmin && (
+                  <div className="sales-record-field">
+                    <label htmlFor="add-modal-branch">Branch</label>
+                    <select
+                      id="add-modal-branch"
+                      value={addModalBranchId}
+                      onChange={(e) => setAddModalBranchId(e.target.value)}
+                      required
+                    >
+                      <option value="">Select branch</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="sales-record-field">
+                  <label htmlFor="add-modal-date">Date</label>
+                  <input
+                    id="add-modal-date"
+                    type="date"
+                    value={addModalDate}
+                    onChange={(e) => setAddModalDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="sales-record-field">
+                  <label htmlFor="add-modal-amount">Amount ($)</label>
+                  <input
+                    id="add-modal-amount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={addModalAmount}
+                    onChange={(e) => setAddModalAmount(e.target.value)}
+                    placeholder="e.g. 150.00"
+                    required
+                  />
+                </div>
+                <div className="sales-record-field">
+                  <label htmlFor="add-modal-image">Receipt image (optional)</label>
+                  <input
+                    id="add-modal-image"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setAddModalImage(e.target.files?.[0] || null)}
+                  />
+                </div>
+              </div>
+              {addModalError && <div className="alert alert-error sales-record-error">{addModalError}</div>}
+              <div className="sales-record-actions">
+                <button type="submit" className="btn-primary" disabled={addModalSubmitting}>
+                  {addModalSubmitting ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => !addModalSubmitting && setShowAddManualModal(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {viewImage && (
         <div
           className="modal-overlay sales-images-modal-overlay"
@@ -693,9 +700,18 @@ export default function SalesPage() {
               className="sales-images-modal-img"
               style={{ maxWidth: '100%', maxHeight: '85vh' }}
             />
-            <button type="button" className="modal-close" onClick={() => setViewImage(null)}>
-              ×
-            </button>
+            <div className="sales-images-modal-actions">
+              <a
+                href={`data:image/jpeg;base64,${viewImage}`}
+                download="receipt.jpg"
+                className="filter-btn"
+              >
+                Download
+              </a>
+              <button type="button" className="modal-close" onClick={() => setViewImage(null)}>
+                ×
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getAppointments, createAppointment, updateAppointment } from '../api/appointments';
 import { getBranches } from '../api/branches';
 import { getCustomers } from '../api/customers';
@@ -334,6 +335,15 @@ export default function AppointmentsPage() {
                     <option key={s.id} value={s.id}>{s.name}{s.durationMinutes ? ` (${s.durationMinutes} min)` : ''}</option>
                   ))}
                 </select>
+                {services.length === 0 && (
+                  <span className="appointment-form-hint">
+                    {isAdmin ? (
+                      <>No services yet. <Link to="/admin/settings" className="appointment-form-hint-link">Add services in Settings</Link> (same list is used for leads).</>
+                    ) : (
+                      'No services yet. Ask admin to add services in Settings (used for appointments and leads).'
+                    )}
+                  </span>
+                )}
               </label>
               <div className="appointment-form-datetime">
                 <label className="auth-form-label">

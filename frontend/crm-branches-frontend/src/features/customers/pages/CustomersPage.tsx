@@ -190,19 +190,21 @@ export default function CustomersPage() {
                     aria-label="Search customers by card ID, name, phone or email"
                   />
                 </label>
-                <button type="button" className="customers-search-btn" onClick={() => document.querySelector<HTMLInputElement>('.customers-search-input')?.focus()}>
+                <button type="button" className="customers-search-btn" onClick={() => document.querySelector<HTMLInputElement>('.customers-search-input')?.focus()} aria-label="Focus search">
                   Search
                 </button>
               </div>
-              <button
-                type="button"
-                className="customers-export-btn"
-                onClick={exportToCsv}
-                disabled={totalFiltered === 0}
-                title={totalFiltered === 0 ? 'No data to export' : 'Export filtered customers to CSV/Excel'}
-              >
-                Export to CSV / Excel
-              </button>
+              <div className="customers-export-wrap">
+                <button
+                  type="button"
+                  className="customers-export-btn"
+                  onClick={exportToCsv}
+                  disabled={totalFiltered === 0}
+                  title={totalFiltered === 0 ? 'No data to export' : 'Export filtered customers to CSV/Excel'}
+                >
+                  Export to CSV / Excel
+                </button>
+              </div>
             </div>
             {totalFiltered > 0 && (
               <p className="customers-showing-count text-muted">

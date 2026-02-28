@@ -4,6 +4,11 @@ import { getTicket, addTicketReply, updateTicketStatus } from '../../../api/tick
 import { useAuth } from '../../../auth/hooks/useAuth';
 import type { TicketDetail, TicketReply } from '../../../api/tickets';
 
+function ticketImageSrc(imageBase64: string | undefined): string {
+  if (!imageBase64) return '';
+  return imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
+}
+
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -43,7 +48,7 @@ export default function TicketDetailPage() {
     if (replyImage) {
       imageBase64 = await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string)?.split(',')[1] || undefined);
+        reader.onload = () => resolve((reader.result as string) || undefined);
         reader.readAsDataURL(replyImage);
       });
     }
@@ -105,10 +110,10 @@ export default function TicketDetailPage() {
             <div className="ticket-message-image">
               <button
                 type="button"
-                onClick={() => setViewImage(ticket.imageBase64!)}
+                onClick={() => setViewImage(ticketImageSrc(ticket.imageBase64!))}
                 className="ticket-image-thumb"
               >
-                <img src={`data:image/jpeg;base64,${ticket.imageBase64}`} alt="Attachment" />
+                <img src={ticketImageSrc(ticket.imageBase64)} alt="Attachment" />
               </button>
             </div>
           )}
@@ -128,10 +133,10 @@ export default function TicketDetailPage() {
               <div className="ticket-message-image">
                 <button
                   type="button"
-                  onClick={() => setViewImage(r.imageBase64!)}
+                  onClick={() => setViewImage(ticketImageSrc(r.imageBase64!))}
                   className="ticket-image-thumb"
                 >
-                  <img src={`data:image/jpeg;base64,${r.imageBase64}`} alt="Attachment" />
+                  <img src={ticketImageSrc(r.imageBase64)} alt="Attachment" />
                 </button>
               </div>
             )}
@@ -154,12 +159,13 @@ export default function TicketDetailPage() {
             />
           </div>
           <div className="ticket-reply-field">
-            <label>Image (optional)</label>
+            <label>Image <span className="tickets-field-hint">— Attach screenshot or photo (optional)</span></label>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
               onChange={(e) => setReplyImage(e.target.files?.[0] || null)}
+              aria-label="Attach image to reply"
             />
             {replyImage && (
               <span className="tickets-file-name">
@@ -186,7 +192,7 @@ export default function TicketDetailPage() {
           onKeyDown={(e) => e.key === 'Escape' && setViewImage(null)}
         >
           <div className="sales-images-modal" onClick={(e) => e.stopPropagation()}>
-            <img src={`data:image/jpeg;base64,${viewImage}`} alt="Attachment" className="sales-images-modal-img" />
+            <img src={viewImage.startsWith('data:') ? viewImage : `data:image/jpeg;base64,${viewImage}`} alt="Attachment" className="sales-images-modal-img" />
             <button type="button" className="sales-images-modal-close" onClick={() => setViewImage(null)} aria-label="Close">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />

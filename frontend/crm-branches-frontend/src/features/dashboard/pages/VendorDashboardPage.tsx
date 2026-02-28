@@ -181,7 +181,7 @@ export default function VendorDashboardPage() {
       <section className="vendor-dashboard-kpis">
         <div className="vendor-kpi-card">
           <span className="vendor-kpi-value">{formatCurrency(data?.totalSales ?? 0)}</span>
-          <span className="vendor-kpi-label">Total sales (in selected period)</span>
+          <span className="vendor-kpi-label">Membership sales (period)</span>
         </div>
         <div className="vendor-kpi-card">
           <span className="vendor-kpi-value">{data?.activeMembershipCount ?? 0}</span>
@@ -320,9 +320,9 @@ export default function VendorDashboardPage() {
           })()}
         </section>
         <section className="content-card vendor-chart-card vendor-chart-sales">
-          <h4>Sales in period (this branch)</h4>
+          <h4>Membership sales only (this branch, period)</h4>
           <div className="vendor-chart-sales-value">{formatCurrency(data?.totalSales ?? 0)}</div>
-          <p className="text-muted">Revenue from memberships sold in the selected period</p>
+          <p className="text-muted">Revenue from memberships sold. Total sales = Membership sales + Daily sales amount (see Sales page).</p>
         </section>
       </div>
       <section className="content-card vendor-chart-card vendor-chart-counts-full">

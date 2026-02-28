@@ -160,45 +160,72 @@ export default function LeadsPage() {
           <h1 className="page-hero-title">Lead inbox</h1>
           <p className="page-hero-subtitle">{isAdmin ? 'All leads by branch. Filter and add new leads.' : 'Your branch leads and follow-ups.'}</p>
         </header>
-        <div className="vendors-filters" style={{ marginTop: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem', display: 'flex', alignItems: 'center' }}>
-          <input type="text" placeholder="Search name, phone, email..." value={search} onChange={(e) => setSearch(e.target.value)} className="filter-btn" style={{ minWidth: '180px' }} />
+        <div className="leads-filters">
+          <label className="leads-search-label">
+            <span className="leads-filter-label">Search</span>
+            <input
+              type="search"
+              placeholder="Name, phone, email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="leads-search-input"
+              aria-label="Search leads by name, phone or email"
+            />
+          </label>
           {isAdmin && (
-            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className="filter-btn">
-              <option value="">All branches</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            <label className="leads-filter-group">
+              <span className="leads-filter-label">Branch</span>
+              <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className="leads-filter-select">
+                <option value="">All branches</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="leads-filter-group">
+            <span className="leads-filter-label">Source</span>
+            <select value={source} onChange={(e) => setSource(e.target.value)} className="leads-filter-select">
+              <option value="">All sources</option>
+              {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-          )}
-          <select value={source} onChange={(e) => setSource(e.target.value)} className="filter-btn">
-            <option value="">All sources</option>
-            {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="filter-btn">
-            <option value="">All statuses</option>
-            {leadStatuses.length > 0
-              ? leadStatuses.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)
-              : ['New', 'Contacted', 'Call not Connected', 'Follow up', 'Booked', 'Lost'].map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-          <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="filter-btn">
-            <option value="">All services</option>
-            {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <span className="text-muted" style={{ fontSize: '0.9rem' }}>From</span>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="filter-btn" />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <span className="text-muted" style={{ fontSize: '0.9rem' }}>To</span>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="filter-btn" />
+          <label className="leads-filter-group">
+            <span className="leads-filter-label">Status</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="leads-filter-select">
+              <option value="">All statuses</option>
+              {leadStatuses.length > 0
+                ? leadStatuses.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)
+                : ['New', 'Contacted', 'Call not Connected', 'Follow up', 'Booked', 'Lost'].map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
           </label>
-          <button type="button" className="auth-submit" style={{ width: 'auto', marginLeft: '0.5rem' }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? 'Cancel' : 'Add lead'}
-          </button>
-          {isAdmin && selectedIds.size > 0 && (
-            <button type="button" className="btn-reject" style={{ marginLeft: '0.5rem' }} onClick={handleBulkDelete} disabled={deleteSubmitting}>
-              {deleteSubmitting ? 'Deleting…' : `Delete ${selectedIds.size} selected`}
+          <label className="leads-filter-group">
+            <span className="leads-filter-label">Service</span>
+            <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className="leads-filter-select">
+              <option value="">All services</option>
+              {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+          <label className="leads-filter-group">
+            <span className="leads-filter-label">From</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="leads-filter-select" aria-label="Date from" />
+          </label>
+          <label className="leads-filter-group">
+            <span className="leads-filter-label">To</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="leads-filter-select" aria-label="Date to" />
+          </label>
+          <div className="leads-filter-actions">
+            <button type="button" className="auth-submit leads-add-btn" onClick={() => setShowForm(!showForm)}>
+              {showForm ? 'Cancel' : 'Add lead'}
             </button>
-          )}
+            {isAdmin && selectedIds.size > 0 && (
+              <button type="button" className="btn-reject leads-delete-selected" onClick={handleBulkDelete} disabled={deleteSubmitting}>
+                {deleteSubmitting ? 'Deleting…' : `Delete ${selectedIds.size} selected`}
+              </button>
+            )}
+          </div>
         </div>
+        {isAdmin && (
+          <p className="leads-bulk-hint text-muted">Filter leads, then select rows and click &quot;Delete selected&quot; to remove them.</p>
+        )}
         {showForm && (
           <form onSubmit={handleAddLead} className="auth-form" style={{ maxWidth: '480px', marginBottom: '1.5rem', padding: '1rem', border: '1px solid var(--theme-border)', borderRadius: '8px' }}>
             <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>New lead</h3>
