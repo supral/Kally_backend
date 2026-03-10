@@ -28,17 +28,21 @@ const MAX_MEMBERSHIPS_LIMIT = 2000;
 
 router.get('/', async (req, res) => {
   try {
-    const { branchId, customerId, status, limit: limitParam } = req.query;
-    const bid = getBranchId(req.user);
+    const { branchId, customerId, status, dateFrom, dateTo, limit: limitParam } = req.query;
     const filter = {};
-    if (req.user.role === 'admin') {
-      if (branchId) filter.soldAtBranchId = branchId;
-    } else if (req.user.role === 'vendor') {
-      if (!bid) filter._id = { $in: [] };
-      else filter.soldAtBranchId = bid;
-    }
+    // Universal: all branches see all memberships (so any branch can do credit redeem). Admin can filter by sold-at branch for reporting.
+    if (req.user.role === 'admin' && branchId) filter.soldAtBranchId = branchId;
     if (customerId) filter.customerId = customerId;
     if (status) filter.status = status;
+    if (dateFrom || dateTo) {
+      filter.purchaseDate = {};
+      if (dateFrom) filter.purchaseDate.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const d = new Date(dateTo);
+        d.setHours(23, 59, 59, 999);
+        filter.purchaseDate.$lte = d;
+      }
+    }
 
     const limit = limitParam ? Math.min(MAX_MEMBERSHIPS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : DEFAULT_MEMBERSHIPS_LIMIT;
     const memberships = await Membership.find(filter)
@@ -57,6 +61,7 @@ router.get('/', async (req, res) => {
           ? { id: m.customerId._id, name: m.customerId.name, phone: m.customerId.phone, email: m.customerId.email, membershipCardId: m.customerId.membershipCardId }
           : null,
         typeName: m.membershipTypeId?.name,
+        packageName: m.packageName || m.membershipTypeId?.name,
         totalCredits: m.totalCredits,
         usedCredits: m.usedCredits,
         remainingCredits: m.totalCredits - m.usedCredits,
@@ -318,6 +323,19 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+/** DELETE /api/memberships/:id - delete a membership (admin only). Removes usage records then the membership. */
+router.delete('/:id', authorize('admin'), async (req, res) => {
+  try {
+    const membership = await Membership.findById(req.params.id);
+    if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
+    await MembershipUsage.deleteMany({ membershipId: membership._id });
+    await Membership.findByIdAndDelete(membership._id);
+    res.json({ success: true, message: 'Membership deleted.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete membership.' });
+  }
+});
+
 /** POST /api/memberships/:id/renew - create a new membership as renewal (expired or fully used). Form sends price & package details; price is included in total sales. */
 router.post('/:id/renew', async (req, res) => {
   try {
@@ -329,9 +347,6 @@ router.post('/:id/renew', async (req, res) => {
     if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
     if (membership.status !== 'expired' && membership.status !== 'used') {
       return res.status(400).json({ success: false, message: 'Only expired or fully used memberships can be renewed.' });
-    }
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Only an admin can renew or update expired/used memberships.' });
     }
 
     const price = typeof packagePrice === 'number' && packagePrice >= 0

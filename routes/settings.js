@@ -22,7 +22,6 @@ router.get('/', async (req, res) => {
       settings: {
         revenuePercentage: doc.revenuePercentage ?? 10,
         settlementPercentage: doc.settlementPercentage ?? 100,
-        membershipRenewalCost: doc.membershipRenewalCost ?? 0,
       },
     });
   } catch (err) {
@@ -36,7 +35,7 @@ router.patch('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Admin only.' });
     }
-    const { revenuePercentage, settlementPercentage, membershipRenewalCost } = req.body;
+    const { revenuePercentage, settlementPercentage } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
       update.revenuePercentage = revenuePercentage;
@@ -50,12 +49,6 @@ router.patch('/', async (req, res) => {
       const n = parseFloat(settlementPercentage);
       if (!Number.isNaN(n) && n >= 0 && n <= 100) update.settlementPercentage = n;
     }
-    if (typeof membershipRenewalCost === 'number' && membershipRenewalCost >= 0) {
-      update.membershipRenewalCost = membershipRenewalCost;
-    } else if (typeof membershipRenewalCost === 'string') {
-      const n = parseFloat(membershipRenewalCost);
-      if (!Number.isNaN(n) && n >= 0) update.membershipRenewalCost = n;
-    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
@@ -66,7 +59,6 @@ router.patch('/', async (req, res) => {
       settings: {
         revenuePercentage: doc.revenuePercentage ?? 10,
         settlementPercentage: doc.settlementPercentage ?? 100,
-        membershipRenewalCost: doc.membershipRenewalCost ?? 0,
       },
     });
   } catch (err) {

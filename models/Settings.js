@@ -15,12 +15,6 @@ const settingsSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
-    /** Membership renewal price (default $0). Used when vendor/admin renews an expired membership. */
-    membershipRenewalCost: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
   },
   { timestamps: true }
 );
