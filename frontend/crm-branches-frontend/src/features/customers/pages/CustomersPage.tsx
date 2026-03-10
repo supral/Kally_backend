@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCustomers, createCustomer } from '../../../api/customers';
+import { getCustomers, createCustomer, deleteCustomer } from '../../../api/customers';
 import { getBranches } from '../../../api/branches';
 import { getSettings } from '../../../api/settings';
 import { useAuth } from '../../../auth/hooks/useAuth';
@@ -26,7 +26,17 @@ export default function CustomersPage() {
   const [importResult, setImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [showImportButton, setShowImportButton] = useState(true);
+  const [showExportButton, setShowExportButton] = useState(true);
+  const [showCustomerDeleteToAdmin, setShowCustomerDeleteToAdmin] = useState(true);
+  const [showCustomerDeleteToVendor, setShowCustomerDeleteToVendor] = useState(true);
+  const [showCustomerDeleteToStaff, setShowCustomerDeleteToStaff] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const isAdmin = user?.role === 'admin';
+  const role = user?.role;
+  const showDeleteButton =
+    (role === 'admin' && showCustomerDeleteToAdmin) ||
+    (role === 'vendor' && showCustomerDeleteToVendor) ||
+    ((role as string) === 'staff' && showCustomerDeleteToStaff);
   const PAGE_SIZE = 10;
   const basePath = isAdmin ? '/admin' : '/vendor';
 
@@ -88,11 +98,26 @@ export default function CustomersPage() {
 
   useEffect(() => {
     getSettings().then((r) => {
-      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
-        setShowImportButton(r.settings.showImportButton);
+      if (r.success && r.settings) {
+        if (typeof r.settings.showImportButton === 'boolean') setShowImportButton(r.settings.showImportButton);
+        if (typeof r.settings.showExportButton === 'boolean') setShowExportButton(r.settings.showExportButton);
+        if (typeof r.settings.showCustomerDeleteToAdmin === 'boolean') setShowCustomerDeleteToAdmin(r.settings.showCustomerDeleteToAdmin);
+        if (typeof r.settings.showCustomerDeleteToVendor === 'boolean') setShowCustomerDeleteToVendor(r.settings.showCustomerDeleteToVendor);
+        if (typeof r.settings.showCustomerDeleteToStaff === 'boolean') setShowCustomerDeleteToStaff(r.settings.showCustomerDeleteToStaff);
       }
     });
   }, []);
+
+  async function handleDeleteCustomer(customerId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm('Delete this customer? This cannot be undone.')) return;
+    setError('');
+    setDeletingId(customerId);
+    const res = await deleteCustomer(customerId);
+    setDeletingId(null);
+    if (res.success) fetchCustomers();
+    else setError(res.message || 'Failed to delete customer.');
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -288,15 +313,17 @@ export default function CustomersPage() {
                   Search
                 </button>
               </div>
-              <button
-                type="button"
-                className="customers-export-btn"
-                onClick={exportToCsv}
-                disabled={totalFiltered === 0}
-                title={totalFiltered === 0 ? 'No data to export' : 'Export filtered customers to CSV/Excel'}
-              >
-                Export to CSV / Excel
-              </button>
+              {showExportButton && (
+                <button
+                  type="button"
+                  className="customers-export-btn"
+                  onClick={exportToCsv}
+                  disabled={totalFiltered === 0}
+                  title={totalFiltered === 0 ? 'No data to export' : 'Export filtered customers to CSV/Excel'}
+                >
+                  Export to CSV / Excel
+                </button>
+              )}
               {showImportButton && (
                 <label className="customers-import-btn customers-import-btn-inline">
                   <input
@@ -369,6 +396,17 @@ export default function CustomersPage() {
                     >
                       Create membership
                     </button>
+                    {showDeleteButton && (
+                      <button
+                        type="button"
+                        className="filter-btn btn-danger btn-sm"
+                        onClick={(e) => handleDeleteCustomer(c.id, e)}
+                        disabled={deletingId === c.id}
+                        title="Delete customer"
+                      >
+                        {deletingId === c.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -412,6 +450,16 @@ export default function CustomersPage() {
                           >
                             Create membership
                           </button>
+                          {showDeleteButton && (
+                            <button
+                              type="button"
+                              className="filter-btn btn-danger btn-sm"
+                              onClick={(e) => handleDeleteCustomer(c.id, e)}
+                              disabled={deletingId === c.id}
+                            >
+                              {deletingId === c.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                   ))}

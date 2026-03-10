@@ -43,6 +43,7 @@ export default function MembershipsList() {
   const [sessionsImporting, setSessionsImporting] = useState(false);
   const [sessionsImportResult, setSessionsImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const [showImportButton, setShowImportButton] = useState(true);
+  const [showExportButton, setShowExportButton] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [deleteConfirmError, setDeleteConfirmError] = useState('');
@@ -130,8 +131,9 @@ export default function MembershipsList() {
 
   useEffect(() => {
     getSettings().then((r) => {
-      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
-        setShowImportButton(r.settings.showImportButton);
+      if (r.success && r.settings) {
+        if (typeof r.settings.showImportButton === 'boolean') setShowImportButton(r.settings.showImportButton);
+        if (typeof r.settings.showExportButton === 'boolean') setShowExportButton(r.settings.showExportButton);
       }
     });
   }, []);
@@ -715,15 +717,17 @@ export default function MembershipsList() {
               {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, totalFiltered)} of {totalFiltered}
             </span>
           )}
-          <button
-            type="button"
-            className="memberships-export-btn"
-            onClick={exportToCsv}
-            disabled={totalFiltered === 0}
-            title={totalFiltered === 0 ? 'No data to export' : 'Export filtered results to CSV/Excel'}
-          >
-            Export to CSV / Excel
-          </button>
+          {showExportButton && (
+            <button
+              type="button"
+              className="memberships-export-btn"
+              onClick={exportToCsv}
+              disabled={totalFiltered === 0}
+              title={totalFiltered === 0 ? 'No data to export' : 'Export filtered results to CSV/Excel'}
+            >
+              Export to CSV / Excel
+            </button>
+          )}
           {showImportButton && (
             <>
               <label className="memberships-import-btn">

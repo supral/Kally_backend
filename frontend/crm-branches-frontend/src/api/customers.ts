@@ -26,6 +26,12 @@ export async function updateCustomer(id: string, data: Partial<Customer> & { pri
   return apiRequest<{ customer: Customer }>(`/customers/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
 
+export async function deleteCustomer(id: string): Promise<{ success: boolean; message?: string }> {
+  // Use POST /:id/delete so it works when proxy/host doesn't forward DELETE
+  const r = await apiRequest<{ success?: boolean; message?: string }>(`/customers/${id}/delete`, { method: 'POST' });
+  return { success: r.success === true, message: (r as { message?: string }).message };
+}
+
 export interface VisitHistoryItem {
   type: 'appointment' | 'membership_usage';
   id: string;

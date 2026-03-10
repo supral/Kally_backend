@@ -28,6 +28,10 @@ router.get('/', async (req, res) => {
           showNotificationComments: doc.showNotificationComments !== false,
           showNotificationSalesData: doc.showNotificationSalesData !== false,
           showImportButton: doc.showImportButton !== false,
+          showExportButton: doc.showExportButton !== false,
+          showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
+          showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
+          showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
         },
       });
     }
@@ -43,6 +47,10 @@ router.get('/', async (req, res) => {
         showNotificationComments: doc.showNotificationComments !== false,
         showNotificationSalesData: doc.showNotificationSalesData !== false,
         showImportButton: doc.showImportButton !== false,
+        showExportButton: doc.showExportButton !== false,
+        showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
+        showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
+        showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
       },
     });
   } catch (err) {
@@ -67,6 +75,10 @@ router.patch('/', async (req, res) => {
       showNotificationComments,
       showNotificationSalesData,
       showImportButton,
+      showExportButton,
+      showCustomerDeleteToAdmin,
+      showCustomerDeleteToVendor,
+      showCustomerDeleteToStaff,
     } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
@@ -105,6 +117,18 @@ router.patch('/', async (req, res) => {
     if (typeof showImportButton === 'boolean') {
       update.showImportButton = showImportButton;
     }
+    if (typeof showExportButton === 'boolean') {
+      update.showExportButton = showExportButton;
+    }
+    if (typeof showCustomerDeleteToAdmin === 'boolean') {
+      update.showCustomerDeleteToAdmin = showCustomerDeleteToAdmin;
+    }
+    if (typeof showCustomerDeleteToVendor === 'boolean') {
+      update.showCustomerDeleteToVendor = showCustomerDeleteToVendor;
+    }
+    if (typeof showCustomerDeleteToStaff === 'boolean') {
+      update.showCustomerDeleteToStaff = showCustomerDeleteToStaff;
+    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
@@ -123,6 +147,10 @@ router.patch('/', async (req, res) => {
         showNotificationComments: doc.showNotificationComments !== false,
         showNotificationSalesData: doc.showNotificationSalesData !== false,
         showImportButton: doc.showImportButton !== false,
+        showExportButton: doc.showExportButton !== false,
+        showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
+        showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
+        showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
       },
     });
   } catch (err) {

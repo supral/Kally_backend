@@ -24,6 +24,12 @@ export default function AdminSettings() {
   const [showNotificationSalesData, setShowNotificationSalesData] = useState<boolean>(true);
   const [importButtonSaving, setImportButtonSaving] = useState(false);
   const [showImportButton, setShowImportButton] = useState<boolean>(true);
+  const [exportButtonSaving, setExportButtonSaving] = useState(false);
+  const [showExportButton, setShowExportButton] = useState<boolean>(true);
+  const [customerDeleteSaving, setCustomerDeleteSaving] = useState(false);
+  const [showCustomerDeleteToAdmin, setShowCustomerDeleteToAdmin] = useState<boolean>(true);
+  const [showCustomerDeleteToVendor, setShowCustomerDeleteToVendor] = useState<boolean>(true);
+  const [showCustomerDeleteToStaff, setShowCustomerDeleteToStaff] = useState<boolean>(true);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [passwordCurrent, setPasswordCurrent] = useState('');
   const [passwordNew, setPasswordNew] = useState('');
@@ -60,6 +66,10 @@ export default function AdminSettings() {
         setShowNotificationComments(r.settings.showNotificationComments !== false);
         setShowNotificationSalesData(r.settings.showNotificationSalesData !== false);
         setShowImportButton(r.settings.showImportButton !== false);
+        setShowExportButton(r.settings.showExportButton !== false);
+        setShowCustomerDeleteToAdmin(r.settings.showCustomerDeleteToAdmin !== false);
+        setShowCustomerDeleteToVendor(r.settings.showCustomerDeleteToVendor !== false);
+        setShowCustomerDeleteToStaff(r.settings.showCustomerDeleteToStaff !== false);
       }
     });
   }, []);
@@ -274,6 +284,32 @@ export default function AdminSettings() {
     setImportButtonSaving(false);
     setMessageType(r.success ? 'success' : 'error');
     setMessage(r.success ? 'Import button visibility saved.' : r.message || 'Failed to save.');
+  };
+
+  const handleSaveExportButton = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExportButtonSaving(true);
+    setMessage('');
+    setMessageType(null);
+    const r = await updateSettings({ showExportButton });
+    setExportButtonSaving(false);
+    setMessageType(r.success ? 'success' : 'error');
+    setMessage(r.success ? 'Export button visibility saved.' : r.message || 'Failed to save.');
+  };
+
+  const handleSaveCustomerDeleteVisibility = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomerDeleteSaving(true);
+    setMessage('');
+    setMessageType(null);
+    const r = await updateSettings({
+      showCustomerDeleteToAdmin,
+      showCustomerDeleteToVendor,
+      showCustomerDeleteToStaff,
+    });
+    setCustomerDeleteSaving(false);
+    setMessageType(r.success ? 'success' : 'error');
+    setMessage(r.success ? 'Customer delete button visibility saved.' : r.message || 'Failed to save.');
   };
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -537,7 +573,7 @@ export default function AdminSettings() {
             )}
           </div>
 
-          <div className="settings-block">
+          <div className="settings-block settings-block-divider">
             <h3 className="settings-block-heading">Import buttons</h3>
             <p className="settings-block-desc">Show or hide Import buttons on Branches, Packages, Customers, Memberships, and Appointments.</p>
             {settingsLoading ? (
@@ -556,6 +592,58 @@ export default function AdminSettings() {
                 </div>
                 <button type="submit" className="settings-btn settings-btn-primary" disabled={importButtonSaving}>
                   {importButtonSaving ? 'Saving…' : 'Save'}
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div className="settings-block">
+            <h3 className="settings-block-heading">Export buttons</h3>
+            <p className="settings-block-desc">Show or hide Export buttons on Customers, Memberships, and Sales Data pages.</p>
+            {settingsLoading ? (
+              <p className="text-muted">Loading...</p>
+            ) : (
+              <form onSubmit={handleSaveExportButton} className="settings-form">
+                <div className="settings-radio-group">
+                  <label className="settings-radio-label">
+                    <input type="radio" name="showExportButton" checked={showExportButton === true} onChange={() => setShowExportButton(true)} />
+                    <span>Yes – show Export buttons</span>
+                  </label>
+                  <label className="settings-radio-label">
+                    <input type="radio" name="showExportButton" checked={showExportButton === false} onChange={() => setShowExportButton(false)} />
+                    <span>No – hide Export buttons</span>
+                  </label>
+                </div>
+                <button type="submit" className="settings-btn settings-btn-primary" disabled={exportButtonSaving}>
+                  {exportButtonSaving ? 'Saving…' : 'Save'}
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div className="settings-block settings-block-divider">
+            <h3 className="settings-block-heading">Customer delete button</h3>
+            <p className="settings-block-desc">Choose which roles can see the delete button on the Customers page (Admin, Vendor, Staff).</p>
+            {settingsLoading ? (
+              <p className="text-muted">Loading...</p>
+            ) : (
+              <form onSubmit={handleSaveCustomerDeleteVisibility} className="settings-form">
+                <div className="settings-checkbox-group">
+                  <label className="settings-checkbox-label">
+                    <input type="checkbox" checked={showCustomerDeleteToAdmin} onChange={(e) => setShowCustomerDeleteToAdmin(e.target.checked)} />
+                    <span>Show to Admin</span>
+                  </label>
+                  <label className="settings-checkbox-label">
+                    <input type="checkbox" checked={showCustomerDeleteToVendor} onChange={(e) => setShowCustomerDeleteToVendor(e.target.checked)} />
+                    <span>Show to Vendor</span>
+                  </label>
+                  <label className="settings-checkbox-label">
+                    <input type="checkbox" checked={showCustomerDeleteToStaff} onChange={(e) => setShowCustomerDeleteToStaff(e.target.checked)} />
+                    <span>Show to Staff</span>
+                  </label>
+                </div>
+                <button type="submit" className="settings-btn settings-btn-primary" disabled={customerDeleteSaving}>
+                  {customerDeleteSaving ? 'Saving…' : 'Save'}
                 </button>
               </form>
             )}

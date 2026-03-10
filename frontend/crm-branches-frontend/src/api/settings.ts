@@ -15,6 +15,14 @@ export interface SystemSettings {
   showNotificationSalesData?: boolean;
   /** When true, Import buttons are visible on Branches, Packages, Customers, Memberships, Appointments. */
   showImportButton?: boolean;
+  /** When true, Export buttons are visible on Customers, Memberships, Sales Data. */
+  showExportButton?: boolean;
+  /** When true, Admin sees the delete button on the Customers page. */
+  showCustomerDeleteToAdmin?: boolean;
+  /** When true, Vendor sees the delete button on the Customers page. */
+  showCustomerDeleteToVendor?: boolean;
+  /** When true, Staff sees the delete button on the Customers page. */
+  showCustomerDeleteToStaff?: boolean;
 }
 
 export async function getSettings(): Promise<{
@@ -38,6 +46,10 @@ export async function updateSettings(data: {
   showNotificationComments?: boolean;
   showNotificationSalesData?: boolean;
   showImportButton?: boolean;
+  showExportButton?: boolean;
+  showCustomerDeleteToAdmin?: boolean;
+  showCustomerDeleteToVendor?: boolean;
+  showCustomerDeleteToStaff?: boolean;
 }): Promise<{
   success: boolean;
   settings?: SystemSettings;

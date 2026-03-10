@@ -4,6 +4,7 @@ const Branch = require('../models/Branch');
 const Appointment = require('../models/Appointment');
 const Membership = require('../models/Membership');
 const MembershipUsage = require('../models/MembershipUsage');
+const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 
 /** Generate next card ID for a branch: prefix (first 3 letters of branch name) + 5-digit sequence, e.g. tes-00001 */
@@ -217,5 +218,46 @@ router.patch('/:id', async (req, res) => {
     res.status(500).json({ success: false, message: err.message || 'Failed to update customer.' });
   }
 });
+
+/** Shared handler: delete customer. Allowed only when settings permit for current role. Blocked if customer has memberships. */
+async function handleDeleteCustomer(req, res) {
+  try {
+    const customer = await Customer.findById(req.params.id).lean();
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
+
+    const settingsDoc = await Settings.findOne().lean();
+    const showToAdmin = settingsDoc?.showCustomerDeleteToAdmin !== false;
+    const showToVendor = settingsDoc?.showCustomerDeleteToVendor !== false;
+    const showToStaff = settingsDoc?.showCustomerDeleteToStaff !== false;
+
+    const role = req.user.role;
+    const allowed =
+      (role === 'admin' && showToAdmin) ||
+      (role === 'vendor' && showToVendor) ||
+      (role === 'staff' && showToStaff);
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'You are not allowed to delete customers.' });
+    }
+
+    const hasMemberships = await Membership.exists({ customerId: req.params.id });
+    if (hasMemberships) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete customer with existing memberships. Remove or transfer memberships first.',
+      });
+    }
+
+    await Customer.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Customer deleted.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete customer.' });
+  }
+}
+
+/** DELETE /api/customers/:id - delete customer */
+router.delete('/:id', handleDeleteCustomer);
+
+/** POST /api/customers/:id/delete - delete customer (fallback when DELETE method is not supported by proxy/host) */
+router.post('/:id/delete', handleDeleteCustomer);
 
 module.exports = router;

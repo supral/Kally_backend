@@ -100,7 +100,7 @@ export default function LoginPage() {
         </div>
         <div className="login-modern-card">
           <div className="login-modern-brand">
-            <img src={LOGO_URL} alt="Logo" className="login-modern-logo" style={{ height: '80px', maxWidth: '360px' }} />
+            <img src={LOGO_URL} alt="Logo" className="login-modern-logo" style={{ height: '64px', maxWidth: '280px' }} />
           </div>
 
           {error && (

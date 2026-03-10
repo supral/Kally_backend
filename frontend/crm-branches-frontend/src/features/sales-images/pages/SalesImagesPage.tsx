@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getSalesImages, getSalesImage, createSalesImage, updateSalesImage, type SalesImageItem, type SalesImageDetail } from '../../../api/salesImages';
 import { getBranches } from '../../../api/branches';
+import { getSettings } from '../../../api/settings';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import { formatCurrency } from '../../../utils/money';
 import type { Branch } from '../../../types/common';
@@ -64,6 +65,7 @@ export default function SalesImagesPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [dropActive, setDropActive] = useState(false);
+  const [showExportButton, setShowExportButton] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = user?.role === 'admin';
@@ -128,6 +130,14 @@ export default function SalesImagesPage() {
   useEffect(() => {
     if (isAdmin) getBranches({ all: true }).then((r) => r.success && r.branches && setBranches(r.branches || []));
   }, [isAdmin]);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showExportButton === 'boolean') {
+        setShowExportButton(r.settings.showExportButton);
+      }
+    });
+  }, []);
 
   async function handleView(id: string) {
     setViewingId(id);
@@ -299,9 +309,11 @@ export default function SalesImagesPage() {
               Upload receipts
             </button>
           )}
-          <button type="button" className="btn-secondary" onClick={handleExport} disabled={loading || filteredImages.length === 0}>
-            Export
-          </button>
+          {showExportButton && (
+            <button type="button" className="btn-secondary" onClick={handleExport} disabled={loading || filteredImages.length === 0}>
+              Export
+            </button>
+          )}
           <button type="button" className="btn-secondary" onClick={fetchImages} disabled={loading}>
             ↻ Refresh
           </button>

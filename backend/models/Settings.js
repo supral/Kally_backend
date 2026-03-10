@@ -36,6 +36,17 @@ const settingsSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    /** When true, Export buttons (customers, memberships, sales data) are visible. */
+    showExportButton: {
+      type: Boolean,
+      default: true,
+    },
+    /** When true, Admin sees the delete button on the Customers page. */
+    showCustomerDeleteToAdmin: { type: Boolean, default: true },
+    /** When true, Vendor sees the delete button on the Customers page. */
+    showCustomerDeleteToVendor: { type: Boolean, default: true },
+    /** When true, Staff sees the delete button on the Customers page. */
+    showCustomerDeleteToStaff: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
