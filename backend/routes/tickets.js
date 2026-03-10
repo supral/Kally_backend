@@ -7,6 +7,28 @@ const router = express.Router();
 
 router.use(protect);
 
+/** GET /api/tickets/count - open ticket count for notification badge. Admin: all open. Vendor: open for their branch */
+router.get('/count', async (req, res) => {
+  try {
+    const bid = getBranchId(req.user);
+    const isAdmin = req.user.role === 'admin';
+
+    let filter = { status: 'open' };
+    if (!isAdmin && bid) {
+      filter.$or = [
+        { createdByBranchId: bid },
+        { targetBranchId: bid },
+        { targetBranchId: null, createdByBranchId: null },
+      ];
+    }
+
+    const openCount = await Ticket.countDocuments(filter);
+    res.json({ success: true, openCount });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to get ticket count.' });
+  }
+});
+
 /** GET /api/tickets - list tickets. Admin: all. Vendor: tickets for their branch */
 router.get('/', async (req, res) => {
   try {
@@ -207,7 +229,7 @@ router.post('/:id/reply', async (req, res) => {
   }
 });
 
-/** PATCH /api/tickets/:id - update status (open/closed) */
+/** PATCH /api/tickets/:id - update status. Closed = delete ticket */
 router.patch('/:id', async (req, res) => {
   try {
     const { status } = req.body;
@@ -225,6 +247,11 @@ router.patch('/:id', async (req, res) => {
       (ticket.targetBranchId == null && bid);
 
     if (!canAccess) return res.status(404).json({ success: false, message: 'Ticket not found.' });
+
+    if (status === 'closed') {
+      await Ticket.findByIdAndDelete(req.params.id);
+      return res.json({ success: true, ticket: { id: ticket._id, status: 'deleted', deleted: true } });
+    }
 
     ticket.status = status;
     await ticket.save();

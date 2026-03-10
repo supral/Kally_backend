@@ -214,6 +214,23 @@ router.patch('/:id/active', async (req, res) => {
   }
 });
 
+/** Update vendor password (admin only). */
+router.patch('/:id/password', async (req, res) => {
+  try {
+    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor' }).select('+password');
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    const newPassword = req.body.newPassword;
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters.' });
+    }
+    vendor.password = String(newPassword);
+    await vendor.save();
+    res.json({ success: true, message: 'Password updated.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to update password.' });
+  }
+});
+
 router.patch('/:id', async (req, res) => {
   try {
     const vendor = await User.findOne({ _id: req.params.id, role: 'vendor' });
@@ -247,6 +264,18 @@ router.patch('/:id', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to update vendor.' });
+  }
+});
+
+/** Delete vendor permanently. Admin must confirm (handled in frontend). */
+router.delete('/:id', async (req, res) => {
+  try {
+    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor' });
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    await User.findByIdAndDelete(vendor._id);
+    res.json({ success: true, message: 'Vendor deleted.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete vendor.' });
   }
 });
 

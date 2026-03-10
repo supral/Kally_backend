@@ -82,7 +82,7 @@ export default function BranchDashboardPage() {
     <div className="dashboard-content sales-dashboard-page">
       <header className="page-hero">
         <h1 className="page-hero-title">Sales dashboard</h1>
-        <p className="page-hero-subtitle">Total sales, memberships, and breakdown by customer and package. Use date and branch filters below for the whole page.</p>
+        <p className="page-hero-subtitle">Total sales, memberships, and breakdown by customer and package.</p>
         <div className="sales-dashboard-filters">
           <label>
             <span>From</span>
@@ -105,9 +105,7 @@ export default function BranchDashboardPage() {
           )}
         </div>
       </header>
-
-      {/* Two vertical sections: left = date & daily sales table, right = chart (same data); one date + branch filter for whole page */}
-      <section className="content-card sales-dashboard-two-panels">
+      <section className="content-card">
         {error && <div className="auth-error">{error}</div>}
         {loading ? (
           <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
@@ -115,14 +113,13 @@ export default function BranchDashboardPage() {
           <>
             <div className="sales-dashboard-daily-section">
               <div className="sales-dashboard-daily-table-wrap">
-                <h2 className="page-section-title" style={{ marginTop: 0 }}>Date &amp; daily sales amount</h2>
-                <p className="text-muted" style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>Membership sales by date (filtered by date range and branch above).</p>
+                <h2 className="page-section-title" style={{ marginTop: 0 }}>Daily sales</h2>
                 <div className="data-table-wrap">
                   <table className="data-table">
                     <thead>
                       <tr>
                         <th>Date</th>
-                        <th className="num">Daily sales amount</th>
+                        <th className="num">Daily sales</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -141,8 +138,7 @@ export default function BranchDashboardPage() {
                 </div>
               </div>
               <div className="sales-dashboard-daily-chart-wrap">
-                <h2 className="page-section-title" style={{ marginTop: 0 }}>Daily sales (chart)</h2>
-                <p className="text-muted" style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>Same data as the table, by date.</p>
+                <h2 className="page-section-title" style={{ marginTop: 0 }}>Daily sales chart</h2>
                 <div className="sales-dashboard-chart-container">
                   {dailySalesData.length === 0 ? (
                     <p className="text-muted" style={{ padding: '2rem', textAlign: 'center' }}>No data to display</p>
@@ -181,7 +177,7 @@ export default function BranchDashboardPage() {
                       ? formatCurrency(data.totalRevenue)
                       : '—'}
                 </span>
-                <span className="owner-hero-stat-label">Membership sales {isAdmin && !branchId ? '(all branches)' : ''}</span>
+                <span className="owner-hero-stat-label">Total sales {isAdmin && !branchId ? '(all branches)' : ''}</span>
               </div>
             </div>
             {isAdmin && (data.byBranch?.length ?? 0) > 0 && (
@@ -194,7 +190,7 @@ export default function BranchDashboardPage() {
                       <thead>
                         <tr>
                           <th>Branch name</th>
-                          <th className="num">Membership sales</th>
+                          <th className="num">Total sales</th>
                         </tr>
                       </thead>
                       <tbody>

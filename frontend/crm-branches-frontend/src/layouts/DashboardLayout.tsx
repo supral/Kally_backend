@@ -1,4 +1,4 @@
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuthStore } from '../auth/auth.store';
 import { Sidebar } from './components/Sidebar';
@@ -6,6 +6,7 @@ import { Topbar } from './components/Topbar';
 import { ProfileMenu } from './components/ProfileMenu';
 import { PageLoader } from '../components/ui/PageLoader';
 import { ROUTES } from '../config/constants';
+import { getTicketCount } from '../api/tickets';
 
 interface NavItem {
   to: string;
@@ -16,10 +17,10 @@ interface NavItem {
 const ownerNav: NavItem[] = [
   { to: ROUTES.admin.root, label: 'Dashboard', icon: '📊' },
   { to: ROUTES.admin.sales, label: 'Sales dashboard', icon: '💰' },
-  { to: ROUTES.admin.vendors, label: 'Branch Staff', icon: '👤' },
-  { to: ROUTES.admin.createVendor, label: 'Add Branch Staff', icon: '➕' },
+  { to: ROUTES.admin.vendors, label: 'Staff (assign branch)', icon: '👤' },
+  { to: ROUTES.admin.createVendor, label: 'Add new staff', icon: '➕' },
   { to: ROUTES.admin.branches, label: 'Branches', icon: '📍' },
-  { to: ROUTES.admin.salesImages, label: 'Sales images', icon: '🖼️' },
+  { to: ROUTES.admin.salesImages, label: 'Sales Data', icon: '🖼️' },
   { to: ROUTES.admin.memberships, label: 'Memberships', icon: '🎫' },
   { to: ROUTES.admin.customers, label: 'Customers', icon: '👥' },
   { to: ROUTES.admin.packages, label: 'Packages', icon: '📦' },
@@ -35,9 +36,10 @@ const ownerNav: NavItem[] = [
 const branchNav: NavItem[] = [
   { to: ROUTES.vendor.root, label: 'Dashboard', icon: '📊' },
   { to: ROUTES.vendor.sales, label: 'Sales', icon: '💰' },
-  { to: ROUTES.vendor.salesImages, label: 'Sales images', icon: '🖼️' },
+  { to: ROUTES.vendor.salesImages, label: 'Sales Data', icon: '🖼️' },
   { to: ROUTES.vendor.memberships, label: 'Memberships', icon: '🎫' },
   { to: ROUTES.vendor.customers, label: 'Customers', icon: '👥' },
+  { to: ROUTES.vendor.packages, label: 'Packages', icon: '📦' },
   { to: ROUTES.vendor.leads, label: 'Leads inbox', icon: '📥' },
   { to: ROUTES.vendor.appointments, label: 'Appointments', icon: '📅' },
   { to: ROUTES.vendor.settlements, label: 'Settlements', icon: '📋' },
@@ -53,16 +55,37 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ title, navItems: navItemsProp }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [ticketCount, setTicketCount] = useState(0);
   const { user } = useAuthStore();
   const navItems = navItemsProp ?? (user?.role === 'admin' ? ownerNav : branchNav);
   const displayTitle = title || (user?.role === 'admin' ? 'Owner Dashboard' : 'Branch Dashboard');
+  const ticketsRoute = user?.role === 'admin' ? ROUTES.admin.tickets : ROUTES.vendor.tickets;
+
+  useEffect(() => {
+    getTicketCount().then((r) => {
+      if (r.success && r.openCount != null) setTicketCount(r.openCount);
+    });
+    const interval = setInterval(() => {
+      getTicketCount().then((r) => {
+        if (r.success && r.openCount != null) setTicketCount(r.openCount);
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className={`dashboard ${sidebarOpen ? 'dashboard-sidebar-open' : ''}`}>
       <Topbar title={displayTitle} onMenuClick={() => setSidebarOpen((o) => !o)}>
         <ProfileMenu />
       </Topbar>
-      <Sidebar title={displayTitle} navItems={navItems} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        title={displayTitle}
+        navItems={navItems}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        ticketCount={ticketCount}
+        ticketsRoute={ticketsRoute}
+      />
       <main className="dashboard-main">
         <Suspense fallback={<PageLoader />}>
           <Outlet />

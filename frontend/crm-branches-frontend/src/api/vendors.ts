@@ -96,3 +96,21 @@ export async function setVendorActive(id: string): Promise<ApproveRejectResponse
   }
   return { success: false, message: (result as { message?: string }).message };
 }
+
+export async function updateVendorPassword(
+  id: string,
+  newPassword: string
+): Promise<{ success: boolean; message?: string }> {
+  const result = await apiRequest<{ message?: string }>(`/vendors/${id}/password`, {
+    method: 'PATCH',
+    body: JSON.stringify({ newPassword }),
+  });
+  if (result.success) return { success: true };
+  return { success: false, message: (result as { message?: string }).message };
+}
+
+export async function deleteVendor(id: string): Promise<{ success: boolean; message?: string }> {
+  const result = await apiRequest<{ message?: string }>(`/vendors/${id}`, { method: 'DELETE' });
+  if (result.success) return { success: true };
+  return { success: false, message: (result as { message?: string }).message };
+}

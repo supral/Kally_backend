@@ -8,11 +8,13 @@ export async function getMembershipTypes(): Promise<{ success: boolean; membersh
   return { success: false, message: (r as { message?: string }).message };
 }
 
-export async function getMemberships(params?: { branchId?: string; customerId?: string; status?: string }) {
+export async function getMemberships(params?: { branchId?: string; customerId?: string; status?: string; dateFrom?: string; dateTo?: string }) {
   const q = new URLSearchParams();
   if (params?.branchId) q.set('branchId', params.branchId);
   if (params?.customerId) q.set('customerId', params.customerId);
   if (params?.status) q.set('status', params.status);
+  if (params?.dateFrom) q.set('dateFrom', params.dateFrom);
+  if (params?.dateTo) q.set('dateTo', params.dateTo);
   const query = q.toString();
   return apiRequest<{ memberships: Membership[] }>(`/memberships${query ? `?${query}` : ''}`);
 }
@@ -77,6 +79,12 @@ export async function recordMembershipUsage(membershipId: string, data: { credit
 
 export async function updateMembership(id: string, data: { usedCredits?: number; status?: string; expiryDate?: string }) {
   return apiRequest<{ membership: Membership }>(`/memberships/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteMembership(id: string): Promise<{ success: boolean; message?: string }> {
+  const r = await apiRequest<{ message?: string }>(`/memberships/${id}`, { method: 'DELETE' });
+  if (r.success) return { success: true };
+  return { success: false, message: (r as { message?: string }).message };
 }
 
 /** Renew an expired or fully used membership. Creates a new membership; packagePrice is included in total sales. */

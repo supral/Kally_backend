@@ -14,6 +14,7 @@ import { useAuth } from '../../../auth/hooks/useAuth';
 import { getVendors } from '../../../api/vendors';
 import { getBranches } from '../../../api/branches';
 import { getSalesDashboard, getOwnerOverview, getSettlements } from '../../../api/reports';
+import { getSalesImages, getSalesImage, type SalesImageItem, type SalesImageDetail } from '../../../api/salesImages';
 import type { SalesDashboard, OwnerOverviewBranch, Settlement } from '../../../types/crm';
 import type { Branch } from '../../../types/crm';
 import type { VendorListItem } from '../../../types/auth';
@@ -46,13 +47,18 @@ export default function AdminDashboardPage() {
   const [salesData, setSalesData] = useState<SalesDashboard | null>(null);
   const [overview, setOverview] = useState<OwnerOverviewBranch[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [, setBranches] = useState<Branch[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [, setVendors] = useState<VendorListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [salesLoading, setSalesLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [settlementsLoading, setSettlementsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [branchSalesImages, setBranchSalesImages] = useState<SalesImageItem[]>([]);
+  const [branchSalesLoading, setBranchSalesLoading] = useState(false);
+  const [viewImageDetail, setViewImageDetail] = useState<SalesImageDetail | null>(null);
+  const [viewImageIndex, setViewImageIndex] = useState(0);
 
   const loadSettlements = useCallback(() => {
     setSettlementsLoading(true);
@@ -117,24 +123,56 @@ export default function AdminDashboardPage() {
     loadSettlements();
   }, [loadOverview, loadSettlements]);
 
+  const loadBranchSales = useCallback(() => {
+    if (!selectedBranchId) {
+      setBranchSalesImages([]);
+      return;
+    }
+    setBranchSalesLoading(true);
+    getSalesImages({ branchId: selectedBranchId })
+      .then((r) => {
+        setBranchSalesLoading(false);
+        if (r.success && r.images) setBranchSalesImages(r.images);
+        else setBranchSalesImages([]);
+      })
+      .catch(() => setBranchSalesLoading(false));
+  }, [selectedBranchId]);
+
+  useEffect(() => {
+    loadBranchSales();
+  }, [loadBranchSales]);
+
+  async function handleViewBranchReceipt(id: string) {
+    const r = await getSalesImage(id);
+    if (r.success && r.image) {
+      setViewImageDetail(r.image);
+      setViewImageIndex(0);
+    }
+  }
+
+  function closeViewImage() {
+    setViewImageDetail(null);
+    setViewImageIndex(0);
+  }
+
   const chartMembershipByBranch = overview.map((o) => ({ name: o.branchName, memberships: o.membershipsSold })).filter((d) => d.memberships > 0 || overview.length <= 10);
   const totalLeads = overview.reduce((s, o) => s + (o.leads ?? 0), 0);
   const totalAppointments = overview.reduce((s, o) => s + (o.appointmentsThisMonth ?? 0), 0);
   const systemGrowthData = [
-    { name: 'Branch Staff', value: totalVendors ?? 0, fill: 'var(--theme-link)' },
+    { name: 'Vendors', value: totalVendors ?? 0, fill: 'var(--theme-link)' },
     { name: 'Branches', value: totalBranches ?? 0, fill: '#8b5cf6' },
     { name: 'Active memberships', value: salesData?.activeMembershipCount ?? 0, fill: '#06b6d4' },
     { name: 'Total leads', value: totalLeads, fill: '#f59e0b' },
     { name: 'Appointments (month)', value: totalAppointments, fill: '#10b981' },
     { name: 'Pending approvals', value: pendingVendors ?? 0, fill: '#ef4444' },
-  ].filter((d) => d.value > 0 || d.name === 'Branch Staff' || d.name === 'Branches');
+  ].filter((d) => d.value > 0 || d.name === 'Vendors' || d.name === 'Branches');
 
   return (
     <div className="dashboard-content admin-dashboard">
       <header className="admin-dashboard-hero">
         <div className="admin-dashboard-hero-inner">
           <h1 className="admin-dashboard-hero-title">Welcome back, {user?.name}</h1>
-          <p className="admin-dashboard-hero-subtitle">Overview of branch staff, branches, sales, and performance.</p>
+          <p className="admin-dashboard-hero-subtitle">Overview of vendors, branches, sales, and performance.</p>
         </div>
       </header>
 
@@ -145,7 +183,7 @@ export default function AdminDashboardPage() {
       <div className="admin-dashboard-kpis stats-grid">
         <div className="stat-card admin-kpi">
           <span className="stat-value">{loading ? '…' : formatNumber(totalVendors ?? 0)}</span>
-          <span className="stat-label">Branch Staff</span>
+          <span className="stat-label">Total vendors</span>
           <Link to={ROUTES.admin.vendors} className="stat-link">View →</Link>
         </div>
         <div className="stat-card admin-kpi">
@@ -292,7 +330,7 @@ export default function AdminDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {settlements.slice(0, 5).map((s) => (
+                  {settlements.slice(0, 10).map((s) => (
                     <tr key={s.id}>
                       <td>{s.fromBranch} → {s.toBranch}</td>
                       <td>{formatCurrency(s.amount)}</td>
@@ -306,7 +344,164 @@ export default function AdminDashboardPage() {
             <p className="admin-chart-empty">No settlements.</p>
           )}
         </section>
+        <section className="content-card admin-table-card">
+          <div className="admin-table-header">
+            <h3>Branch Sales Data</h3>
+            <div className="admin-branch-sales-header">
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                className="admin-branch-sales-select"
+                aria-label="Select branch"
+              >
+                <option value="">Select branch…</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              {selectedBranchId && (
+                <button type="button" className="admin-table-refresh" onClick={loadBranchSales} aria-label="Refresh">↻</button>
+              )}
+            </div>
+          </div>
+          {!selectedBranchId ? (
+            <p className="admin-chart-empty">Select a branch to view its Sales Data.</p>
+          ) : branchSalesLoading ? (
+            <div className="admin-chart-loading"><div className="spinner" /><span>Loading...</span></div>
+          ) : branchSalesImages.length === 0 ? (
+            <p className="admin-chart-empty">No Sales Data for this branch.</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table admin-table-clickable">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Date</th>
+                    <th>Sales count</th>
+                    <th>Amount</th>
+                    <th className="th-actions">View</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchSalesImages.map((img) => (
+                    <tr
+                      key={img.id}
+                      onClick={() => handleViewBranchReceipt(img.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && handleViewBranchReceipt(img.id)}
+                    >
+                      <td><strong>{img.title}</strong></td>
+                      <td>{new Date(img.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                      <td>{img.manualSalesCount ?? img.salesCount}</td>
+                      <td>{(img.salesAmount != null && img.salesAmount > 0) ? formatCurrency(img.salesAmount) : '—'}</td>
+                      <td className="branch-actions">
+                        <span className="branch-action-btn branch-action-view">View receipt →</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
+
+      {viewImageDetail && (
+        <div
+          className="sales-images-modal-overlay"
+          onClick={closeViewImage}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Escape' && closeViewImage()}
+        >
+          <div className="sales-images-modal sales-images-modal-with-sidebar" onClick={(e) => e.stopPropagation()}>
+            <div className="sales-images-modal-main">
+              {viewImageDetail.imageBase64s && viewImageDetail.imageBase64s.length > 0 ? (
+                <>
+                  <img
+                    src={viewImageDetail.imageBase64s[viewImageIndex]?.startsWith('data:') ? viewImageDetail.imageBase64s[viewImageIndex] : `data:image/jpeg;base64,${viewImageDetail.imageBase64s[viewImageIndex]}`}
+                    alt={`Sales receipt ${viewImageIndex + 1} of ${viewImageDetail.imageBase64s.length}`}
+                    className="sales-images-modal-img"
+                  />
+                  {viewImageDetail.imageBase64s.length > 1 && (
+                    <div className="sales-images-modal-nav">
+                      <button
+                        type="button"
+                        className="sales-images-modal-nav-btn"
+                        onClick={(e) => { e.stopPropagation(); setViewImageIndex((i) => Math.max(0, i - 1)); }}
+                        disabled={viewImageIndex <= 0}
+                        aria-label="Previous image"
+                      >
+                        ‹
+                      </button>
+                      <span className="sales-images-modal-nav-label">
+                        {viewImageIndex + 1} / {viewImageDetail.imageBase64s.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="sales-images-modal-nav-btn"
+                        onClick={(e) => { e.stopPropagation(); setViewImageIndex((i) => Math.min(viewImageDetail.imageBase64s.length - 1, i + 1)); }}
+                        disabled={viewImageIndex >= viewImageDetail.imageBase64s.length - 1}
+                        aria-label="Next image"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
+                  {viewImageDetail.imageBase64s.length > 1 && (
+                    <div className="sales-images-modal-thumbs">
+                      {viewImageDetail.imageBase64s.map((src, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`sales-images-modal-thumb ${viewImageIndex === idx ? 'active' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); setViewImageIndex(idx); }}
+                          aria-label={`View image ${idx + 1}`}
+                        >
+                          <img src={src.startsWith('data:') ? src : `data:image/jpeg;base64,${src}`} alt="" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="sales-images-modal-no-img">No images</div>
+              )}
+            </div>
+            <aside className="sales-images-modal-sidebar">
+              <div className="sales-images-sidebar-header">
+                <h3 className="sales-images-sidebar-title">{viewImageDetail.title}</h3>
+                <span className="sales-images-sidebar-date">
+                  {new Date(viewImageDetail.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                <span className="sales-images-sidebar-badge">{viewImageDetail.branchName}</span>
+              </div>
+              {(viewImageDetail.description != null && viewImageDetail.description !== '') && (
+                <p className="sales-images-sidebar-desc">{viewImageDetail.description}</p>
+              )}
+              <div className="sales-images-sidebar-stats">
+                <div className="sales-images-sidebar-stat">
+                  <span className="sales-images-sidebar-count">{viewImageDetail.salesCount}</span>
+                  <span className="sales-images-sidebar-count-label">sales {viewImageDetail.manualSalesCount != null ? '(manual)' : ''}</span>
+                </div>
+                {(viewImageDetail.salesAmount != null && viewImageDetail.salesAmount > 0) && (
+                  <div className="sales-images-sidebar-stat">
+                    <span className="sales-images-sidebar-count">{formatCurrency(viewImageDetail.salesAmount)}</span>
+                    <span className="sales-images-sidebar-count-label">sales amount</span>
+                  </div>
+                )}
+              </div>
+            </aside>
+            <button type="button" className="sales-images-modal-close" onClick={closeViewImage} aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

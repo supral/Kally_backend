@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/hooks/useAuth';
 
@@ -7,16 +7,18 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, user } = useAuth();
+  const { login, user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
 
-  if (user) {
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
     const redirect = user.role === 'admin' ? '/admin' : '/vendor';
     navigate(redirect, { replace: true });
-    return null;
-  }
+  }, [isAuthenticated, user, navigate]);
+
+  if (isAuthenticated && user) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

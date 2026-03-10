@@ -22,7 +22,6 @@ export default function MembershipDetailPage() {
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [renewing, setRenewing] = useState(false);
-  const [renewPrice, setRenewPrice] = useState('0');
   const [renewCredits, setRenewCredits] = useState('');
   const basePath = user?.role === 'admin' ? '/admin' : '/vendor';
 
@@ -36,7 +35,6 @@ export default function MembershipDetailPage() {
         setUsageHistory(r.usageHistory || []);
         if (m && (m.status === 'expired' || m.status === 'used')) {
           setRenewCredits(String(m.totalCredits));
-          setRenewPrice('0');
         }
       } else setError(r.message || 'Failed to load');
     });
@@ -91,11 +89,6 @@ export default function MembershipDetailPage() {
   async function handleRenew(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !membership) return;
-    const price = parseFloat(renewPrice);
-    if (Number.isNaN(price) || price < 0) {
-      setError('Please enter a valid renewal price (0 or greater).');
-      return;
-    }
     const credits = renewCredits.trim() ? parseInt(renewCredits, 10) : membership.totalCredits;
     if (Number.isNaN(credits) || credits < 1) {
       setError('Total credits must be at least 1.');
@@ -104,7 +97,7 @@ export default function MembershipDetailPage() {
     setRenewing(true);
     setError('');
     const res = await renewMembership(id, {
-      packagePrice: price,
+      packagePrice: 0,
       totalCredits: credits,
     });
     setRenewing(false);
@@ -173,32 +166,35 @@ export default function MembershipDetailPage() {
             <span className="membership-detail-label">Sold at</span>
             <span className="membership-detail-value">{membership!.soldAtBranch || '—'}</span>
           </div>
+          <div className="membership-detail-field">
+            <span className="membership-detail-label">Purchase date</span>
+            <span className="membership-detail-value">{membership!.purchaseDate ? new Date(membership!.purchaseDate).toLocaleDateString() : '—'}</span>
+          </div>
+          <div className="membership-detail-field">
+            <span className="membership-detail-label">Expiry</span>
+            <span className="membership-detail-value">{membership!.expiryDate ? new Date(membership!.expiryDate).toLocaleDateString() : '—'}</span>
+          </div>
         </div>
 
         {(membership!.status === 'expired' || membership!.status === 'used') && (
           <div className="membership-renew-section">
             <div className="membership-renew-alert" role="alert">
-              <p className="membership-renew-title">All credits have been used.</p>
-              {user?.role !== 'admin' && (
-                <p className="membership-renew-hint">Contact your admin to renew.</p>
+              {membership!.status === 'expired' ? (
+                <p className="membership-renew-title">This membership has expired.</p>
+              ) : (
+                <p className="membership-renew-title">This membership has been fully used.</p>
               )}
             </div>
-            {user?.role === 'admin' && (
-              <form onSubmit={handleRenew} className="membership-renew-form">
-                <h4 className="membership-renew-form-title">Renew membership</h4>
-                <p className="membership-renew-form-desc">Set price and credits. The renewal will be included in total sales.</p>
-                {error && <div className="auth-error">{error}</div>}
-                <label>
-                  <span>Renewal price ($) <strong>*</strong></span>
-                  <input type="number" min={0} step={0.01} value={renewPrice} onChange={(e) => setRenewPrice(e.target.value)} placeholder="0" required />
-                </label>
-                <label>
-                  <span>Total credits</span>
-                  <input type="number" min={1} value={renewCredits} onChange={(e) => setRenewCredits(e.target.value)} placeholder={String(membership!.totalCredits)} />
-                </label>
-                <button type="submit" className="auth-submit" disabled={renewing}>{renewing ? 'Renewing…' : 'Renew'}</button>
-              </form>
-            )}
+            <form onSubmit={handleRenew} className="membership-renew-form">
+              <h4 className="membership-renew-form-title">Renew membership</h4>
+              <p className="membership-renew-form-desc">Set total credits for the renewal.</p>
+              {error && <div className="auth-error">{error}</div>}
+              <label>
+                <span>Total credits</span>
+                <input type="number" min={1} value={renewCredits} onChange={(e) => setRenewCredits(e.target.value)} placeholder={String(membership!.totalCredits)} required />
+              </label>
+              <button type="submit" className="auth-submit" disabled={renewing}>{renewing ? 'Renewing…' : 'Renew'}</button>
+            </form>
           </div>
         )}
 
@@ -251,6 +247,7 @@ export default function MembershipDetailPage() {
                   <div className="membership-usage-body">
                     <span className="membership-usage-credits">{u.creditsUsed} credit{u.creditsUsed !== 1 ? 's' : ''} used</span>
                     {u.usedBy && <span className="membership-usage-by"> · {u.usedBy}</span>}
+                    {u.serviceDetails && <p className="membership-usage-details">{u.serviceDetails}</p>}
                     {u.notes && <p className="membership-usage-notes text-muted">{u.notes}</p>}
                   </div>
                 </div>

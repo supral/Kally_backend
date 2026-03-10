@@ -27,6 +27,12 @@ export interface TicketDetail extends Ticket {
   replies: TicketReply[];
 }
 
+export async function getTicketCount(): Promise<{ success: boolean; openCount?: number; message?: string }> {
+  const r = await http<{ openCount: number }>('/tickets/count');
+  if (r.success && 'openCount' in r) return { success: true, openCount: r.openCount as number };
+  return { success: false, message: r.message };
+}
+
 export async function getTickets(): Promise<{ success: boolean; tickets?: Ticket[]; message?: string }> {
   const r = await http<{ tickets: Ticket[] }>('/tickets');
   if (r.success && 'tickets' in r) return { success: true, tickets: r.tickets as Ticket[] };

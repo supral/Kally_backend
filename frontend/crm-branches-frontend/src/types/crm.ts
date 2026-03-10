@@ -33,6 +33,7 @@ export interface Membership {
   id: string;
   customer?: { id: string; name: string; phone: string; email?: string; membershipCardId?: string } | null;
   typeName?: string;
+  packageName?: string;
   totalCredits: number;
   usedCredits: number;
   remainingCredits?: number;

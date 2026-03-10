@@ -5,7 +5,6 @@ const Appointment = require('../models/Appointment');
 const Membership = require('../models/Membership');
 const MembershipUsage = require('../models/MembershipUsage');
 const { protect } = require('../middleware/auth');
-const { getBranchId } = require('../middleware/branchFilter');
 
 /** Generate next card ID for a branch: prefix (first 3 letters of branch name) + 5-digit sequence, e.g. tes-00001 */
 async function generateCardId(primaryBranchId) {
@@ -35,20 +34,13 @@ router.use(protect);
 
 router.get('/', async (req, res) => {
   try {
-    const bid = getBranchId(req.user);
     const forDropdown = req.query.forDropdown === '1' || req.query.forDropdown === 'true';
     const branchIdQuery = req.query.branchId;
     let filter = {};
-    if (!forDropdown) {
-      if (req.user.role === 'vendor') {
-        filter = { createdBy: req.user._id };
-      } else if (req.user.role === 'admin' && branchIdQuery) {
-        filter = { primaryBranchId: branchIdQuery };
-      } else if (bid) {
-        filter = { primaryBranchId: bid };
-      }
-      // admin with no branchId / no bid: filter stays {} → return all customers (including those created from Settlements)
+    if (!forDropdown && req.user.role === 'admin' && branchIdQuery) {
+      filter = { primaryBranchId: branchIdQuery };
     }
+    // Universal customers: all branches see all customers. Admin can optionally filter by primary branch for reporting.
     const limitParam = req.query.limit;
     const limit = limitParam ? Math.min(1000, Math.max(1, parseInt(limitParam, 10))) : 500;
     const customers = await Customer.find(filter).populate('primaryBranchId', 'name').sort({ name: 1 }).limit(limit).lean();
@@ -116,16 +108,7 @@ router.get('/:id', async (req, res) => {
   try {
     const customer = await Customer.findById(req.params.id).populate('primaryBranchId', 'name').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
-    if (req.user.role === 'vendor') {
-      if (!customer.createdBy || String(customer.createdBy) !== String(req.user._id)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    } else {
-      const bid = getBranchId(req.user);
-      if (bid && String(customer.primaryBranchId?._id || customer.primaryBranchId) !== String(bid)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    }
+    // Universal: any branch can view any customer
     res.json({
       success: true,
       customer: {
@@ -152,17 +135,7 @@ router.get('/:id/visit-history', async (req, res) => {
   try {
     const customer = await Customer.findById(req.params.id).select('primaryBranchId createdBy').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
-    const primaryBranchIdStr = customer.primaryBranchId ? String(customer.primaryBranchId) : null;
-    if (req.user.role === 'vendor') {
-      if (!customer.createdBy || String(customer.createdBy) !== String(req.user._id)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    } else {
-      const bid = getBranchId(req.user);
-      if (bid && primaryBranchIdStr !== String(bid)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    }
+    // Universal: any branch can view visit history
 
     const membershipIds = await Membership.find({ customerId: req.params.id }).distinct('_id');
 
@@ -216,16 +189,7 @@ router.patch('/:id', async (req, res) => {
   try {
     const existing = await Customer.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ success: false, message: 'Customer not found.' });
-    if (req.user.role === 'vendor') {
-      if (!existing.createdBy || String(existing.createdBy) !== String(req.user._id)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    } else {
-      const bid = getBranchId(req.user);
-      if (bid && String(existing.primaryBranchId) !== String(bid)) {
-        return res.status(404).json({ success: false, message: 'Customer not found.' });
-      }
-    }
+    // Universal: any branch can update any customer
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,

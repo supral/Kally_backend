@@ -14,7 +14,23 @@ const listPackages = async (req, res) => {
     const list = await Package.find(filter).sort({ name: 1 }).lean();
     res.json({
       success: true,
-      packages: list.map((p) => ({ id: p._id, name: p.name, price: p.price, settlementAmount: p.settlementAmount, isActive: p.isActive })),
+      packages: list.map((p) => {
+        const discount = p.discountAmount ?? 0;
+        const sessions = p.totalSessions ?? 1;
+        let settlement = p.settlementAmount;
+        if (settlement == null && sessions > 0) {
+          settlement = computeSettlementAmount(p.price, discount, sessions);
+        }
+        return {
+          id: p._id,
+          name: p.name,
+          price: p.price,
+          discountAmount: discount,
+          totalSessions: sessions,
+          settlementAmount: settlement,
+          isActive: p.isActive,
+        };
+      }),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch packages.' });
@@ -23,10 +39,17 @@ const listPackages = async (req, res) => {
 router.get('/', listPackages);
 router.get('', listPackages);
 
-/** POST /api/packages - create (admin only) */
-router.post('/', authorize('admin'), async (req, res) => {
+function computeSettlementAmount(price, discountAmount, totalSessions) {
+  if (!totalSessions || totalSessions <= 0) return undefined;
+  const p = Number(price) || 0;
+  const d = Number(discountAmount) || 0;
+  return (p + d) / (2 * totalSessions);
+}
+
+/** POST /api/packages - create (admin and vendor) */
+router.post('/', authorize('admin', 'vendor'), async (req, res) => {
   try {
-    const { name, price, settlementAmount } = req.body;
+    const { name, price, discountAmount, totalSessions } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, message: 'Name is required.' });
     }
@@ -34,15 +57,25 @@ router.post('/', authorize('admin'), async (req, res) => {
     if (isNaN(numPrice) || numPrice < 0) {
       return res.status(400).json({ success: false, message: 'Price must be a non-negative number.' });
     }
-    const numSettlement = settlementAmount != null && settlementAmount !== '' ? Number(settlementAmount) : undefined;
+    const numDiscount = discountAmount != null && discountAmount !== '' ? Number(discountAmount) : 0;
+    if (isNaN(numDiscount) || numDiscount < 0) {
+      return res.status(400).json({ success: false, message: 'Discount amount must be 0 or greater.' });
+    }
+    const numSessions = totalSessions != null && totalSessions !== '' ? Number(totalSessions) : undefined;
+    if (numSessions == null || !Number.isInteger(numSessions) || numSessions < 1) {
+      return res.status(400).json({ success: false, message: 'No. of sessions is required and must be at least 1.' });
+    }
+    const settlementAmount = computeSettlementAmount(numPrice, numDiscount, numSessions);
     const pkg = await Package.create({
       name: String(name).trim(),
       price: numPrice,
-      settlementAmount: numSettlement != null && !isNaN(numSettlement) && numSettlement >= 0 ? numSettlement : undefined,
+      discountAmount: numDiscount,
+      totalSessions: numSessions,
+      settlementAmount: settlementAmount != null && !isNaN(settlementAmount) && settlementAmount >= 0 ? settlementAmount : undefined,
     });
     res.status(201).json({
       success: true,
-      package: { id: pkg._id, name: pkg.name, price: pkg.price, settlementAmount: pkg.settlementAmount },
+      package: { id: pkg._id, name: pkg.name, price: pkg.price, discountAmount: pkg.discountAmount, totalSessions: pkg.totalSessions, settlementAmount: pkg.settlementAmount },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to create package.' });
@@ -58,21 +91,26 @@ router.patch('/:id', authorize('admin'), async (req, res) => {
     }
     const pkg = await Package.findById(id);
     if (!pkg) return res.status(404).json({ success: false, message: 'Package not found.' });
-    const { name, price, settlementAmount, isActive } = req.body;
+    const { name, price, discountAmount, totalSessions, isActive } = req.body;
     if (name !== undefined) pkg.name = String(name).trim();
     if (price !== undefined) {
       const num = Number(price);
       if (!isNaN(num) && num >= 0) pkg.price = num;
     }
-    if (settlementAmount !== undefined) {
-      const num = settlementAmount != null && settlementAmount !== '' ? Number(settlementAmount) : null;
-      pkg.settlementAmount = num != null && !isNaN(num) && num >= 0 ? num : undefined;
+    if (discountAmount !== undefined) {
+      const num = Number(discountAmount);
+      if (!isNaN(num) && num >= 0) pkg.discountAmount = num;
+    }
+    if (totalSessions !== undefined) {
+      const num = Number(totalSessions);
+      if (Number.isInteger(num) && num >= 1) pkg.totalSessions = num;
     }
     if (isActive !== undefined) pkg.isActive = !!isActive;
+    pkg.settlementAmount = computeSettlementAmount(pkg.price, pkg.discountAmount, pkg.totalSessions);
     await pkg.save();
     res.json({
       success: true,
-      package: { id: pkg._id, name: pkg.name, price: pkg.price, settlementAmount: pkg.settlementAmount, isActive: pkg.isActive },
+      package: { id: pkg._id, name: pkg.name, price: pkg.price, discountAmount: pkg.discountAmount, totalSessions: pkg.totalSessions, settlementAmount: pkg.settlementAmount, isActive: pkg.isActive },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to update package.' });

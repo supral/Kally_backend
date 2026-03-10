@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { getBranches, createBranch, updateBranch, deleteBranch } from '../api/branches';
 import { useAuth } from '../auth/hooks/useAuth';
 import type { Branch } from '../types/crm';
@@ -19,6 +19,9 @@ export default function BranchesPage() {
   const [editZipCode, setEditZipCode] = useState('');
   const [deletingBranchId, setDeletingBranchId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const isAdmin = user?.role === 'admin';
   const PAGE_SIZE = 10;
   const totalPages = Math.max(1, Math.ceil(branches.length / PAGE_SIZE));
@@ -86,6 +89,63 @@ export default function BranchesPage() {
     } else setError(res.message || 'Failed to delete');
   }
 
+  function extractBranchRows(parsed: unknown): Record<string, unknown>[] {
+    if (Array.isArray(parsed)) {
+      const tableObj = parsed.find((item) => item && typeof item === 'object' && (item as { type?: string }).type === 'table' && Array.isArray((item as { data?: unknown[] }).data));
+      if (tableObj) return (tableObj as { data: Record<string, unknown>[] }).data;
+      return parsed;
+    }
+    if (parsed && typeof parsed === 'object') {
+      const o = parsed as Record<string, unknown>;
+      if (Array.isArray(o.data)) return o.data as Record<string, unknown>[];
+      if (Array.isArray(o.branches)) return o.branches as Record<string, unknown>[];
+    }
+    return [];
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    setImportResult(null);
+    setImporting(true);
+    let ok = 0, fail = 0, skipped = 0;
+    const legacyMap: Record<string, string> = JSON.parse(localStorage.getItem('branchLegacyIdMap') || '{}');
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const rows = extractBranchRows(parsed);
+      if (rows.length === 0) {
+        setError('No branch data found. Expected PHPMyAdmin table export or { data: [...] }.');
+        setImporting(false);
+        return;
+      }
+      const str = (v: unknown) => (v != null && v !== '' ? String(v).trim() : '');
+      for (const row of rows) {
+        const name = str(row.branch ?? row.name ?? row.branch_name);
+        if (!name) { skipped++; continue; }
+        const address = str(row.street_address ?? row.address ?? row.streetAddress);
+        const zipMatch = address.match(/\b(\d{5}(?:-\d{4})?)\b/);
+        const zipCode = zipMatch ? zipMatch[1] : str(row.zip_code ?? row.zipCode ?? row.zip);
+        const res = await createBranch({ name, address: address || undefined, zipCode: zipCode || undefined });
+        if (res.success) {
+          ok++;
+          const oldId = str(row.id);
+          if (oldId && (res as unknown as { branch?: { id?: string } }).branch?.id) {
+            legacyMap[oldId] = (res as unknown as { branch: { id: string } }).branch.id;
+          }
+        } else fail++;
+      }
+      if (Object.keys(legacyMap).length > 0) localStorage.setItem('branchLegacyIdMap', JSON.stringify(legacyMap));
+      setImportResult({ ok, fail, skipped });
+      if (ok > 0) loadBranches();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid JSON file');
+    }
+    setImporting(false);
+  }
+
   if (loading) {
     return (
       <div className="dashboard-content">
@@ -102,9 +162,28 @@ export default function BranchesPage() {
       </header>
       <section className="content-card">
         {isAdmin && (
-          <button type="button" className="auth-submit" style={{ marginBottom: '1rem', width: 'auto' }} onClick={() => setShowForm(!showForm)}>
-            {showForm ? 'Cancel' : 'Add branch'}
-          </button>
+          <div className="branches-top-actions">
+            <button type="button" className="auth-submit" style={{ marginBottom: '1rem', width: 'auto' }} onClick={() => setShowForm(!showForm)}>
+              {showForm ? 'Cancel' : 'Add branch'}
+            </button>
+            <label className="branches-import-btn">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="branches-import-input"
+                aria-label="Import branches from JSON"
+                onChange={handleImportFile}
+                disabled={importing}
+              />
+              {importing ? 'Importing…' : 'Import from JSON'}
+            </label>
+          </div>
+        )}
+        {importResult && (
+          <p className="branches-import-result">
+            Import complete: {importResult.ok} created, {importResult.fail} failed, {importResult.skipped} skipped (missing name).
+          </p>
         )}
         {showForm && (
           <form onSubmit={handleCreate} className="auth-form" style={{ marginBottom: '1rem', maxWidth: '420px' }}>

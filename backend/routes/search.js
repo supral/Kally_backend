@@ -15,7 +15,8 @@ router.get('/customers-memberships', async (req, res) => {
     }
     const term = String(q).trim();
     const isPhone = /^\d+$/.test(term);
-    const customerFilter = req.user.role === 'vendor' ? { createdBy: req.user._id } : {};
+    // Universal: all branches can search all customers and memberships
+    const customerFilter = {};
 
     // Escape regex special chars to prevent ReDoS
     const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -3,8 +3,6 @@ import { apiRequest } from './client';
 export interface SystemSettings {
   revenuePercentage?: number;
   settlementPercentage?: number;
-  /** Membership renewal price (default $0). Used when renewing an expired membership. */
-  membershipRenewalCost?: number;
 }
 
 export async function getSettings(): Promise<{
@@ -17,7 +15,7 @@ export async function getSettings(): Promise<{
   return { success: false, message: (r as { message?: string }).message };
 }
 
-export async function updateSettings(data: { revenuePercentage?: number; settlementPercentage?: number; membershipRenewalCost?: number }): Promise<{
+export async function updateSettings(data: { revenuePercentage?: number; settlementPercentage?: number }): Promise<{
   success: boolean;
   settings?: SystemSettings;
   message?: string;

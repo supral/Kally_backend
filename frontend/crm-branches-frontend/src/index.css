@@ -68,15 +68,26 @@ select option {
   color: #0f172a;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 280px;
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   background-color: var(--theme-bg);
+  overflow-x: hidden;
+  width: 100%;
 }
 
 #root {
   min-height: 100vh;
+  min-height: -webkit-fill-available;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 a {
@@ -98,5 +109,17 @@ button {
   }
   .dashboard-header-user .user-name {
     display: none;
+  }
+}
+
+/* Safe area for notched devices */
+@supports (padding: max(0px)) {
+  .dashboard-header {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+  .dashboard-main {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
   }
 }

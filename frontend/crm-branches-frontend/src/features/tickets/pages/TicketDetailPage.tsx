@@ -1,13 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getTicket, addTicketReply, updateTicketStatus } from '../../../api/tickets';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import type { TicketDetail, TicketReply } from '../../../api/tickets';
-
-function ticketImageSrc(imageBase64: string | undefined): string {
-  if (!imageBase64) return '';
-  return imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`;
-}
 
 export default function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +17,7 @@ export default function TicketDetailPage() {
   const [viewImage, setViewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const basePath = isAdmin ? '/admin' : '/vendor';
 
@@ -48,7 +44,7 @@ export default function TicketDetailPage() {
     if (replyImage) {
       imageBase64 = await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string) || undefined);
+        reader.onload = () => resolve((reader.result as string)?.split(',')[1] || undefined);
         reader.readAsDataURL(replyImage);
       });
     }
@@ -68,7 +64,13 @@ export default function TicketDetailPage() {
   async function handleStatusChange(status: 'open' | 'closed') {
     if (!id) return;
     const r = await updateTicketStatus(id, status);
-    if (r.success) fetchTicket();
+    if (r.success) {
+      if (status === 'closed') {
+        navigate(`${basePath}/tickets`);
+      } else {
+        fetchTicket();
+      }
+    }
   }
 
   if (loading) return <div className="tickets-loading">Loading ticket…</div>;
@@ -81,15 +83,13 @@ export default function TicketDetailPage() {
         <div className="ticket-detail-meta">
           <h1 className="ticket-detail-title">{ticket.subject}</h1>
           <span className={`ticket-status-badge ticket-status-${ticket.status}`}>{ticket.status}</span>
-          {isAdmin && (
-            <button
-              type="button"
-              className="btn-secondary btn-sm"
-              onClick={() => handleStatusChange(ticket.status === 'open' ? 'closed' : 'open')}
-            >
-              Mark {ticket.status === 'open' ? 'closed' : 'open'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn-secondary btn-sm"
+            onClick={() => handleStatusChange(ticket.status === 'open' ? 'closed' : 'open')}
+          >
+            Mark {ticket.status === 'open' ? 'closed' : 'open'}
+          </button>
         </div>
         <p className="ticket-detail-from">
           From: {ticket.createdByBranch || ticket.createdBy || '—'} → To: {ticket.targetBranch || 'All branches'}
@@ -110,10 +110,10 @@ export default function TicketDetailPage() {
             <div className="ticket-message-image">
               <button
                 type="button"
-                onClick={() => setViewImage(ticketImageSrc(ticket.imageBase64!))}
+                onClick={() => setViewImage(ticket.imageBase64!)}
                 className="ticket-image-thumb"
               >
-                <img src={ticketImageSrc(ticket.imageBase64)} alt="Attachment" />
+                <img src={`data:image/jpeg;base64,${ticket.imageBase64}`} alt="Attachment" />
               </button>
             </div>
           )}
@@ -133,10 +133,10 @@ export default function TicketDetailPage() {
               <div className="ticket-message-image">
                 <button
                   type="button"
-                  onClick={() => setViewImage(ticketImageSrc(r.imageBase64!))}
+                  onClick={() => setViewImage(r.imageBase64!)}
                   className="ticket-image-thumb"
                 >
-                  <img src={ticketImageSrc(r.imageBase64)} alt="Attachment" />
+                  <img src={`data:image/jpeg;base64,${r.imageBase64}`} alt="Attachment" />
                 </button>
               </div>
             )}
@@ -159,13 +159,12 @@ export default function TicketDetailPage() {
             />
           </div>
           <div className="ticket-reply-field">
-            <label>Image <span className="tickets-field-hint">— Attach screenshot or photo (optional)</span></label>
+            <label>Image (optional)</label>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
               onChange={(e) => setReplyImage(e.target.files?.[0] || null)}
-              aria-label="Attach image to reply"
             />
             {replyImage && (
               <span className="tickets-file-name">
@@ -192,7 +191,7 @@ export default function TicketDetailPage() {
           onKeyDown={(e) => e.key === 'Escape' && setViewImage(null)}
         >
           <div className="sales-images-modal" onClick={(e) => e.stopPropagation()}>
-            <img src={viewImage.startsWith('data:') ? viewImage : `data:image/jpeg;base64,${viewImage}`} alt="Attachment" className="sales-images-modal-img" />
+            <img src={`data:image/jpeg;base64,${viewImage}`} alt="Attachment" className="sales-images-modal-img" />
             <button type="button" className="sales-images-modal-close" onClick={() => setViewImage(null)} aria-label="Close">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />

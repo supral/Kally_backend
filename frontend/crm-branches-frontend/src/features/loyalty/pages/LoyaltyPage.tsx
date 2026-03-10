@@ -1,14 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDebounce } from '../../../hooks/useDebounce';
 import { searchCustomersAndMemberships } from '../../../api/search';
 import {
-  getLoyalty,
-  earnLoyaltyPoints,
-  redeemLoyaltyPoints,
   getLoyaltyInsights,
   type RepeatedCustomer,
   type MembershipUpgrader,
 } from '../../../api/loyalty.api';
+import { useAuth } from '../../../auth/hooks/useAuth';
+import { ROUTES } from '../../../config/constants';
 
 function formatDate(s: string) {
   if (!s) return '—';
@@ -18,19 +18,11 @@ function formatDate(s: string) {
 type TabId = 'members' | 'visits';
 
 export default function LoyaltyPage() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [customers, setCustomers] = useState<{ id: string; name: string; phone?: string }[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [selectedCustomerName, setSelectedCustomerName] = useState('');
-  const [points, setPoints] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<{ id: string; points: number; type: string; reason?: string; branchName?: string; createdAt: string }[]>([]);
-  const [loadingLoyalty, setLoadingLoyalty] = useState(false);
-  const [earnPoints, setEarnPoints] = useState('');
-  const [earnReason, setEarnReason] = useState('');
-  const [redeemPoints, setRedeemPoints] = useState('');
-  const [redeemReason, setRedeemReason] = useState('');
-  const [actionMessage, setActionMessage] = useState('');
   const [activeTab, setActiveTab] = useState<TabId>('members');
 
   const [repeatedCustomers, setRepeatedCustomers] = useState<RepeatedCustomer[]>([]);
@@ -71,60 +63,12 @@ export default function LoyaltyPage() {
       .catch(() => setSearching(false));
   };
 
-  const loadLoyalty = (customerId: string, customerName?: string) => {
-    setSelectedCustomerId(customerId);
-    const name = customerName ?? customers.find((x) => x.id === customerId)?.name ?? '';
-    setSelectedCustomerName(name);
-    setActionMessage('');
-    setLoadingLoyalty(true);
-    getLoyalty(customerId)
-      .then((r) => {
-        setLoadingLoyalty(false);
-        if (r.success) {
-          setPoints(r.points ?? 0);
-          setTransactions(r.transactions ?? []);
-        } else {
-          setPoints(0);
-          setTransactions([]);
-        }
-      })
-      .catch(() => setLoadingLoyalty(false));
-  };
-
-  const closeDetail = () => {
-    setSelectedCustomerId(null);
-    setSelectedCustomerName('');
-    setActionMessage('');
-  };
-
-  const handleEarn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCustomerId || !earnPoints) return;
-    const p = parseInt(earnPoints, 10);
-    if (isNaN(p) || p <= 0) return;
-    const r = await earnLoyaltyPoints(selectedCustomerId, p, earnReason || undefined);
-    setActionMessage(r.success ? `Added ${p} points. New balance: ${r.points}` : r.message || 'Failed');
-    if (r.success) {
-      setPoints(r.points ?? 0);
-      setEarnPoints('');
-      setEarnReason('');
-      getLoyalty(selectedCustomerId).then((res) => res.success && setTransactions(res.transactions ?? []));
-    }
-  };
-
-  const handleRedeem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCustomerId || !redeemPoints) return;
-    const p = parseInt(redeemPoints, 10);
-    if (isNaN(p) || p <= 0) return;
-    const r = await redeemLoyaltyPoints(selectedCustomerId, p, redeemReason || undefined);
-    setActionMessage(r.success ? `Redeemed ${p} points. New balance: ${r.points}` : r.message || 'Failed');
-    if (r.success) {
-      setPoints(r.points ?? 0);
-      setRedeemPoints('');
-      setRedeemReason('');
-      getLoyalty(selectedCustomerId).then((res) => res.success && setTransactions(res.transactions ?? []));
-    }
+  const navigateToDetail = (customerId: string, customerName?: string) => {
+    const base =
+      user?.role === 'admin'
+        ? ROUTES.admin.loyaltyDetail(customerId)
+        : ROUTES.vendor.loyaltyDetail(customerId);
+    navigate(base, { state: { customerName } });
   };
 
   return (
@@ -148,6 +92,54 @@ export default function LoyaltyPage() {
           </button>
         </div>
       </header>
+
+      <section className="content-card loyalty-search-card" style={{ marginBottom: '1rem' }}>
+        <h3 className="loyalty-search-title">Search customer</h3>
+        <p className="loyalty-card-desc">
+          Find any customer by name or phone to manage their loyalty points.
+        </p>
+        <div className="loyalty-search-row">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && runSearch()}
+            placeholder="Name or phone..."
+            className="loyalty-search-input"
+            aria-label="Search customer"
+          />
+          <button
+            type="button"
+            className="loyalty-search-btn"
+            onClick={runSearch}
+            disabled={searching}
+          >
+            {searching ? (
+              <>
+                <span className="loyalty-spinner small" /> Searching...
+              </>
+            ) : (
+              'Search'
+            )}
+          </button>
+        </div>
+        {customers.length > 0 && (
+          <ul className="loyalty-customer-list" style={{ marginTop: '0.75rem' }}>
+            {customers.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  className="loyalty-customer-btn"
+                  onClick={() => navigateToDetail(c.id, c.name)}
+                >
+                  <span className="loyalty-customer-name">{c.name}</span>
+                  {c.phone && <span className="loyalty-customer-phone">{c.phone}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="loyalty-main-grid">
         <div className="loyalty-tables-column">
@@ -199,11 +191,10 @@ export default function LoyaltyPage() {
                         {membershipUpgraders.map((row) => (
                           <tr
                             key={row.customerId}
-                            className={selectedCustomerId === row.customerId ? 'selected' : ''}
-                            onClick={() => loadLoyalty(row.customerId, row.customerName)}
+                            onClick={() => navigateToDetail(row.customerId, row.customerName)}
                             role="button"
                             tabIndex={0}
-                            onKeyDown={(e) => e.key === 'Enter' && loadLoyalty(row.customerId, row.customerName)}
+                            onKeyDown={(e) => e.key === 'Enter' && navigateToDetail(row.customerId, row.customerName)}
                           >
                             <td><strong>{row.customerName}</strong></td>
                             <td>{row.phone}</td>
@@ -249,11 +240,10 @@ export default function LoyaltyPage() {
                         {repeatedCustomers.map((row) => (
                           <tr
                             key={row.customerId}
-                            className={selectedCustomerId === row.customerId ? 'selected' : ''}
-                            onClick={() => loadLoyalty(row.customerId, row.customerName)}
+                            onClick={() => navigateToDetail(row.customerId, row.customerName)}
                             role="button"
                             tabIndex={0}
-                            onKeyDown={(e) => e.key === 'Enter' && loadLoyalty(row.customerId, row.customerName)}
+                            onKeyDown={(e) => e.key === 'Enter' && navigateToDetail(row.customerId, row.customerName)}
                           >
                             <td><strong>{row.customerName}</strong></td>
                             <td>{row.phone}</td>
@@ -269,113 +259,7 @@ export default function LoyaltyPage() {
               </>
             )}
           </section>
-
-          <section className="content-card loyalty-search-card">
-            <h3 className="loyalty-search-title">Search customer</h3>
-            <p className="loyalty-card-desc">Find any customer by name, phone, or membership card to manage their points.</p>
-            <div className="loyalty-search-row">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                placeholder="Name, phone, or membership card..."
-                className="loyalty-search-input"
-                aria-label="Search customer"
-              />
-              <button type="button" className="loyalty-search-btn" onClick={runSearch} disabled={searching}>
-                {searching ? <><span className="loyalty-spinner small" /> Searching...</> : 'Search'}
-              </button>
-            </div>
-            {customers.length > 0 && (
-              <ul className="loyalty-customer-list">
-                {customers.map((c) => (
-                  <li key={c.id}>
-                    <button type="button" className="loyalty-customer-btn" onClick={() => loadLoyalty(c.id, c.name)}>
-                      <span className="loyalty-customer-name">{c.name}</span>
-                      {c.phone && <span className="loyalty-customer-phone">{c.phone}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
         </div>
-
-        <aside className={`loyalty-detail-column ${selectedCustomerId ? 'open' : ''}`}>
-          {selectedCustomerId ? (
-            <section className="content-card loyalty-detail-card">
-              <div className="loyalty-detail-header">
-                <h2 className="loyalty-detail-title">{selectedCustomerName || 'Customer'} — Points</h2>
-                <button type="button" className="loyalty-close-btn" onClick={closeDetail} aria-label="Close">×</button>
-              </div>
-              {loadingLoyalty ? (
-                <div className="loyalty-loading-state">
-                  <span className="loyalty-spinner" />
-                  <span>Loading...</span>
-                </div>
-              ) : (
-                <>
-                  <div className="loyalty-balance-card">
-                    <span className="loyalty-balance-label">Balance</span>
-                    <span className="loyalty-balance-value">{points ?? 0} pts</span>
-                  </div>
-                  {actionMessage && (
-                    <div className={`loyalty-action-msg ${actionMessage.includes('Failed') ? 'error' : 'success'}`} role="alert">
-                      {actionMessage}
-                    </div>
-                  )}
-                  <div className="loyalty-actions-grid">
-                    <form onSubmit={handleEarn} className="loyalty-form-card earn">
-                      <h4 className="loyalty-form-title">Earn points</h4>
-                      <label><span>Points</span><input type="number" min={1} value={earnPoints} onChange={(e) => setEarnPoints(e.target.value)} placeholder="e.g. 10" /></label>
-                      <label><span>Reason (optional)</span><input type="text" value={earnReason} onChange={(e) => setEarnReason(e.target.value)} placeholder="Visit / spend" /></label>
-                      <button type="submit" className="auth-submit loyalty-submit">Add points</button>
-                    </form>
-                    <form onSubmit={handleRedeem} className="loyalty-form-card redeem">
-                      <h4 className="loyalty-form-title">Redeem points</h4>
-                      <label><span>Points</span><input type="number" min={1} value={redeemPoints} onChange={(e) => setRedeemPoints(e.target.value)} placeholder="e.g. 50" /></label>
-                      <label><span>Reason (optional)</span><input type="text" value={redeemReason} onChange={(e) => setRedeemReason(e.target.value)} placeholder="Reward" /></label>
-                      <button type="submit" className="auth-submit loyalty-submit">Redeem</button>
-                    </form>
-                  </div>
-                  <h4 className="loyalty-transactions-heading">Recent transactions</h4>
-                  {transactions.length === 0 ? (
-                    <p className="text-muted loyalty-no-tx">No transactions yet.</p>
-                  ) : (
-                    <div className="data-table-wrap">
-                      <table className="data-table loyalty-tx-table">
-                        <thead>
-                          <tr>
-                            <th>Date & time</th>
-                            <th>Type</th>
-                            <th className="num">Points</th>
-                            <th>Reason</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {transactions.slice(0, 20).map((t) => (
-                            <tr key={t.id}>
-                              <td>{new Date(t.createdAt).toLocaleString()}</td>
-                              <td><span className={`loyalty-tx-type ${t.type}`}>{t.type}</span></td>
-                              <td className="num">{t.type === 'earn' ? '+' : ''}{t.points}</td>
-                              <td>{t.reason || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
-          ) : (
-            <div className="loyalty-detail-placeholder">
-              <span className="loyalty-placeholder-icon" aria-hidden>👤</span>
-              <p>Select a customer from the list or search to manage points.</p>
-            </div>
-          )}
-        </aside>
       </div>
     </div>
   );

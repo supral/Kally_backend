@@ -61,7 +61,7 @@ export default function TicketsPage() {
     if (imageFile) {
       imageBase64 = await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string) || undefined);
+        reader.onload = () => resolve((reader.result as string)?.split(',')[1] || undefined);
         reader.readAsDataURL(imageFile);
       });
     }
@@ -87,7 +87,6 @@ export default function TicketsPage() {
   }
 
   const openTickets = tickets.filter((t) => t.status === 'open');
-  const closedTickets = tickets.filter((t) => t.status === 'closed');
 
   return (
     <div className="dashboard-content tickets-page">
@@ -95,7 +94,7 @@ export default function TicketsPage() {
         <div>
           <h1 className="tickets-hero-title">Tickets</h1>
           <p className="tickets-hero-subtitle">
-            Communication channel between admin and branches. Create tickets, reply in thread, and attach images (screenshots, photos) to messages.
+            Communication channel between admin and branches. Create tickets, attach images, and reply in thread.
           </p>
         </div>
         <button
@@ -156,13 +155,12 @@ export default function TicketsPage() {
               />
             </div>
             <div className="tickets-field">
-              <label>Image <span className="tickets-field-hint">— Attach screenshots or photos (optional but recommended)</span></label>
+              <label>Image (optional)</label>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                aria-label="Attach image"
               />
               {imageFile && (
                 <span className="tickets-file-name">
@@ -198,7 +196,10 @@ export default function TicketsPage() {
         <div className="tickets-list">
           {openTickets.length > 0 && (
             <section className="content-card">
-              <h2 className="tickets-section-title">Open</h2>
+              <h2 className="tickets-section-title">
+                Open ({openTickets.length})
+                <span className="tickets-section-hint">— these appear in the sidebar notification. Click View, then "Mark closed" to close and delete a ticket.</span>
+              </h2>
               <div className="tickets-table-wrap">
                 <table className="data-table">
                   <thead>
@@ -213,46 +214,6 @@ export default function TicketsPage() {
                   </thead>
                   <tbody>
                     {openTickets.map((t) => (
-                      <tr key={t.id}>
-                        <td>
-                          <Link to={`${basePath}/tickets/${t.id}`} className="ticket-subject-link">
-                            {t.subject}
-                            {t.hasImage && <span className="ticket-has-image" title="Has image">🖼</span>}
-                          </Link>
-                        </td>
-                        <td>{t.createdByBranch || t.createdBy || '—'}</td>
-                        <td>{t.targetBranch || 'All'}</td>
-                        <td>{t.replyCount}</td>
-                        <td>{new Date(t.createdAt).toLocaleDateString()}</td>
-                        <td>
-                          <Link to={`${basePath}/tickets/${t.id}`} className="btn-secondary btn-sm">
-                            View
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-          {closedTickets.length > 0 && (
-            <section className="content-card">
-              <h2 className="tickets-section-title">Closed</h2>
-              <div className="tickets-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Subject</th>
-                      <th>From</th>
-                      <th>To</th>
-                      <th>Replies</th>
-                      <th>Date</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {closedTickets.map((t) => (
                       <tr key={t.id}>
                         <td>
                           <Link to={`${basePath}/tickets/${t.id}`} className="ticket-subject-link">

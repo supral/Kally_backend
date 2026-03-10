@@ -6,10 +6,10 @@ import type { Service } from '../types/crm';
 
 export default function AdminSettings() {
   const [message, setMessage] = useState('');
+  const [revenuePercentage, setRevenuePercentage] = useState('');
   const [settlementPercentage, setSettlementPercentage] = useState('');
-  const [membershipRenewalCost, setMembershipRenewalCost] = useState('');
+  const [revenueSaving, setRevenueSaving] = useState(false);
   const [settlementSaving, setSettlementSaving] = useState(false);
-  const [renewalSaving, setRenewalSaving] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(true);
 
   const [services, setServices] = useState<Service[]>([]);
@@ -32,8 +32,8 @@ export default function AdminSettings() {
     getSettings().then((r) => {
       setSettingsLoading(false);
       if (r.success && r.settings != null) {
+        setRevenuePercentage(String(r.settings.revenuePercentage ?? 10));
         setSettlementPercentage(String(r.settings.settlementPercentage ?? 100));
-        setMembershipRenewalCost(String(r.settings.membershipRenewalCost ?? 0));
       }
     });
   }, []);
@@ -121,6 +121,20 @@ export default function AdminSettings() {
     } else setMessage(r.message || 'Failed to remove service.');
   };
 
+  const handleSaveRevenuePercentage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseFloat(revenuePercentage);
+    if (Number.isNaN(num) || num < 0 || num > 100) {
+      setMessage('Revenue percentage must be between 0 and 100.');
+      return;
+    }
+    setRevenueSaving(true);
+    setMessage('');
+    const r = await updateSettings({ revenuePercentage: num });
+    setRevenueSaving(false);
+    setMessage(r.success ? 'Revenue percentage saved.' : r.message || 'Failed to save.');
+  };
+
   const handleSaveSettlementPercentage = async (e: React.FormEvent) => {
     e.preventDefault();
     const num = parseFloat(settlementPercentage);
@@ -135,26 +149,41 @@ export default function AdminSettings() {
     setMessage(r.success ? 'Settlement percentage saved.' : r.message || 'Failed to save.');
   };
 
-  const handleSaveRenewalCost = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseFloat(membershipRenewalCost);
-    if (Number.isNaN(num) || num < 0) {
-      setMessage('Membership renewal cost must be 0 or greater.');
-      return;
-    }
-    setRenewalSaving(true);
-    setMessage('');
-    const r = await updateSettings({ membershipRenewalCost: num });
-    setRenewalSaving(false);
-    setMessage(r.success ? 'Membership renewal cost saved.' : r.message || 'Failed to save.');
-  };
-
   return (
     <div className="dashboard-content">
       <section className="content-card">
         <h2>Settings</h2>
         <p>System and role settings.</p>
         {message && <p className="text-muted" style={{ marginTop: '0.5rem' }}>{message}</p>}
+      </section>
+
+      <section className="content-card" style={{ marginTop: '1rem' }}>
+        <h3>Revenue percentage</h3>
+        <p className="text-muted">
+          Percentage of membership sales counted as revenue for reporting. This percentage is applied to total membership
+          sales when calculating revenue-based metrics.
+        </p>
+        {settingsLoading ? (
+          <p className="text-muted">Loading...</p>
+        ) : (
+          <form onSubmit={handleSaveRevenuePercentage} className="auth-form" style={{ maxWidth: '320px', marginTop: '0.5rem' }}>
+            <label>
+              <span>Revenue percentage (%)</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={revenuePercentage}
+                onChange={(e) => setRevenuePercentage(e.target.value)}
+                placeholder="10"
+              />
+            </label>
+            <button type="submit" className="auth-submit" disabled={revenueSaving}>
+              {revenueSaving ? 'Saving...' : 'Save revenue percentage'}
+            </button>
+          </form>
+        )}
       </section>
 
       <section className="content-card" style={{ marginTop: '1rem' }}>
@@ -186,36 +215,9 @@ export default function AdminSettings() {
       </section>
 
       <section className="content-card" style={{ marginTop: '1rem' }}>
-        <h3>Membership renewal cost</h3>
-        <p className="text-muted">
-          When an expired membership is renewed (via the &quot;Renew&quot; button on the membership View/Use page), this amount is set as the new membership&apos;s package price. Set to 0 for free renewal.
-        </p>
-        {settingsLoading ? (
-          <p className="text-muted">Loading...</p>
-        ) : (
-          <form onSubmit={handleSaveRenewalCost} className="auth-form" style={{ maxWidth: '320px', marginTop: '0.5rem' }}>
-            <label>
-              <span>Renewal cost ($)</span>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={membershipRenewalCost}
-                onChange={(e) => setMembershipRenewalCost(e.target.value)}
-                placeholder="0"
-              />
-            </label>
-            <button type="submit" className="auth-submit" disabled={renewalSaving}>
-              {renewalSaving ? 'Saving...' : 'Save renewal cost'}
-            </button>
-          </form>
-        )}
-      </section>
-
-      <section className="content-card" style={{ marginTop: '1rem' }}>
         <h3>Services</h3>
         <p className="text-muted">
-          Add and manage services here. They appear in <strong>Book appointment</strong> (Appointments page) and in <strong>Leads</strong> (when adding a lead or filtering by service). Leave branch blank for a service available at all branches.
+          Add services that can be selected when booking appointments or converting leads. Leave branch blank for services available at all branches.
         </p>
         {message && <p className="text-muted" style={{ marginTop: '0.5rem' }}>{message}</p>}
         <form onSubmit={handleAddService} className="auth-form" style={{ maxWidth: '480px', marginTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
