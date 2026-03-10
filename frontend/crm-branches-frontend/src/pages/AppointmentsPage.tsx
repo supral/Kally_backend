@@ -4,6 +4,7 @@ import { getAppointments, createAppointment, updateAppointment } from '../api/ap
 import { getBranches } from '../api/branches';
 import { getCustomers } from '../api/customers';
 import { getServices } from '../api/services';
+import { getSettings } from '../api/settings';
 import { useBranch } from '../hooks/useBranch';
 import { ROUTES } from '../config/constants';
 import type { Appointment, Branch, Customer, Service } from '../types/crm';
@@ -42,6 +43,7 @@ export default function AppointmentsPage() {
   const [importingAppointments, setImportingAppointments] = useState(false);
   const [importAppointmentsResult, setImportAppointmentsResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const [importBranchId, setImportBranchId] = useState('');
+  const [showImportButton, setShowImportButton] = useState(true);
   const PAGE_SIZE = 10;
 
   const effectiveBranchId = isAdmin ? (branchId || undefined) : (userBranchId || undefined);
@@ -79,6 +81,14 @@ export default function AppointmentsPage() {
       setImportBranchId(branchId || branches[0].id);
     }
   }, [isAdmin, branches, branchId, importBranchId]);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
+        setShowImportButton(r.settings.showImportButton);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!bookOpen) return;
@@ -282,33 +292,35 @@ export default function AppointmentsPage() {
               aria-label="Appointment date"
             />
           </label>
-          <div className="appointments-import-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <label className="appointments-date-label" style={{ margin: 0 }}>
-              <span className="appointments-date-label-text">Import to branch</span>
-              <select
-                value={importBranchId}
-                onChange={(e) => setImportBranchId(e.target.value)}
-                className="filter-btn appointments-select"
-                aria-label="Import to branch"
-              >
-                <option value="">Select branch</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="memberships-import-btn" style={{ margin: 0, cursor: importingAppointments ? 'not-allowed' : 'pointer' }}>
-              <input
-                type="file"
-                accept=".json,application/json"
-                className="memberships-import-input"
-                aria-label="Import appointments from JSON"
-                onChange={handleImportAppointmentsFile}
-                disabled={importingAppointments}
-              />
-              {importingAppointments ? 'Importing…' : 'Import appointments (JSON)'}
-            </label>
-          </div>
+          {showImportButton && (
+            <div className="appointments-import-wrap" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <label className="appointments-date-label" style={{ margin: 0 }}>
+                <span className="appointments-date-label-text">Import to branch</span>
+                <select
+                  value={importBranchId}
+                  onChange={(e) => setImportBranchId(e.target.value)}
+                  className="filter-btn appointments-select"
+                  aria-label="Import to branch"
+                >
+                  <option value="">Select branch</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="memberships-import-btn" style={{ margin: 0, cursor: importingAppointments ? 'not-allowed' : 'pointer' }}>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="memberships-import-input"
+                  aria-label="Import appointments from JSON"
+                  onChange={handleImportAppointmentsFile}
+                  disabled={importingAppointments}
+                />
+                {importingAppointments ? 'Importing…' : 'Import appointments (JSON)'}
+              </label>
+            </div>
+          )}
         </div>
         {importAppointmentsResult && (
           <div className="memberships-import-result" role="status" style={{ marginTop: '0.75rem' }}>
@@ -368,37 +380,50 @@ export default function AppointmentsPage() {
                     </td>
                     {canChangeStatus && (
                       <td>
-                        {['pending', 'scheduled', 'confirmed', 'accepted'].includes(a.status) && (
-                          <div className="appointments-row-actions">
+                        <div className="appointments-row-actions">
+                          {['pending', 'scheduled', 'confirmed', 'accepted'].includes(a.status) && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-approve appointments-action-btn"
+                                onClick={() => handleStatusChange(a.id, 'accepted')}
+                                disabled={updatingId !== null}
+                                title="Accept"
+                              >
+                                {updatingId === a.id ? '…' : 'Accept'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-primary appointments-action-btn"
+                                onClick={() => handleStatusChange(a.id, 'completed')}
+                                disabled={updatingId !== null}
+                                title="Mark completed"
+                              >
+                                Complete
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-reject appointments-action-btn"
+                                onClick={() => handleStatusChange(a.id, 'rejected')}
+                                disabled={updatingId !== null}
+                                title="Reject"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          {(a.status === 'accepted' || a.status === 'rejected' || a.status === 'completed') && (
                             <button
                               type="button"
-                              className="btn-approve appointments-action-btn"
-                              onClick={() => handleStatusChange(a.id, 'accepted')}
+                              className="filter-btn appointments-action-btn"
+                              onClick={() => handleStatusChange(a.id, 'pending')}
                               disabled={updatingId !== null}
-                              title="Accept"
+                              title="Set to pending"
                             >
-                              {updatingId === a.id ? '…' : 'Accept'}
+                              {updatingId === a.id ? '…' : 'Pending'}
                             </button>
-                            <button
-                              type="button"
-                              className="btn-primary appointments-action-btn"
-                              onClick={() => handleStatusChange(a.id, 'completed')}
-                              disabled={updatingId !== null}
-                              title="Mark completed"
-                            >
-                              Complete
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-reject appointments-action-btn"
-                              onClick={() => handleStatusChange(a.id, 'rejected')}
-                              disabled={updatingId !== null}
-                              title="Reject"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

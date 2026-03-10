@@ -178,8 +178,9 @@ export default function AdminDashboardPage() {
 
       {error && <div className="auth-error admin-dashboard-error" role="alert">{error}</div>}
 
-      <div className="admin-dashboard-bottom">
-      <h2 className="admin-dashboard-section-title">Key metrics</h2>
+      <div className="admin-dashboard-sections">
+      <section className="admin-dashboard-section admin-dashboard-section-kpis" aria-labelledby="admin-dashboard-kpis-title">
+      <h2 id="admin-dashboard-kpis-title" className="admin-dashboard-section-title">Key metrics</h2>
       <div className="admin-dashboard-kpis stats-grid">
         <div className="stat-card admin-kpi">
           <span className="stat-value">{loading ? '…' : formatNumber(totalVendors ?? 0)}</span>
@@ -207,9 +208,10 @@ export default function AdminDashboardPage() {
           <Link to={ROUTES.admin.leads} className="stat-link">Leads inbox →</Link>
         </div>
       </div>
+      </section>
 
-      <div className="admin-dashboard-charts-section">
-      <h2 className="admin-dashboard-section-title">Analytics</h2>
+      <section className="admin-dashboard-section admin-dashboard-section-charts" aria-labelledby="admin-dashboard-analytics-title">
+      <h2 id="admin-dashboard-analytics-title" className="admin-dashboard-section-title">Analytics</h2>
       <div className="admin-dashboard-charts">
         <section className="content-card admin-chart-card admin-chart-card-full">
           <h3>Memberships by branch</h3>
@@ -263,98 +265,148 @@ export default function AdminDashboardPage() {
           )}
         </section>
       </div>
-      </div>
+      </section>
 
-      <h2 className="admin-dashboard-section-title">Branch &amp; settlements</h2>
+      <section className="admin-dashboard-section admin-dashboard-section-tables" aria-labelledby="admin-dashboard-branch-settlements-title">
+      <h2 id="admin-dashboard-branch-settlements-title" className="admin-dashboard-section-title">Branch &amp; settlements</h2>
       <div className="admin-dashboard-tables">
-        <section className="content-card admin-table-card">
+        <section className="content-card admin-table-card admin-branch-perf-card">
           <div className="admin-table-header">
             <h3>Branch performance</h3>
             <button type="button" className="admin-table-refresh" onClick={loadOverview}>↻</button>
           </div>
+          <div className="admin-table-card-body">
           {overviewLoading ? (
             <div className="admin-chart-loading"><div className="spinner" /><span>Loading...</span></div>
           ) : overview.length > 0 ? (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Branch</th>
-                    <th>Memberships sold</th>
-                    <th>Leads</th>
-                    <th>Leads booked</th>
-                    <th>Appointments (month)</th>
-                    <th>Completed</th>
-                    <th className="th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {overview.map((row) => (
-                    <tr key={row.branchId}>
-                      <td><strong>{row.branchName}</strong></td>
-                      <td>{formatNumber(row.membershipsSold)}</td>
-                      <td>{formatNumber(row.leads)}</td>
-                      <td>{formatNumber(row.leadsBooked)}</td>
-                      <td>{formatNumber(row.appointmentsThisMonth)}</td>
-                      <td>{formatNumber(row.appointmentsCompleted)}</td>
-                      <td className="branch-actions">
-                        <Link to={ROUTES.admin.branches} className="branch-action-btn branch-action-view">Manage →</Link>
-                      </td>
+            <>
+              <div className="admin-dashboard-mobile-cards admin-branch-perf-mobile">
+                {overview.map((row) => (
+                  <div key={row.branchId} className="admin-dashboard-mobile-card">
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Branch</span>
+                      <span className="admin-dashboard-mobile-value"><strong>{row.branchName}</strong></span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Memberships sold</span>
+                      <span className="admin-dashboard-mobile-value">{formatNumber(row.membershipsSold)}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Leads / Booked / Appointments / Completed</span>
+                      <span className="admin-dashboard-mobile-value">{formatNumber(row.leads)} / {formatNumber(row.leadsBooked)} / {formatNumber(row.appointmentsThisMonth)} / {formatNumber(row.appointmentsCompleted)}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-actions">
+                      <Link to={ROUTES.admin.branches} className="branch-action-btn branch-action-view">Manage →</Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-table-wrap admin-branch-perf-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Branch</th>
+                      <th>Memberships sold</th>
+                      <th>Leads</th>
+                      <th>Booked</th>
+                      <th>Appointments</th>
+                      <th>Completed</th>
+                      <th className="th-actions">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {overview.map((row) => (
+                      <tr key={row.branchId}>
+                        <td><strong>{row.branchName}</strong></td>
+                        <td>{formatNumber(row.membershipsSold)}</td>
+                        <td>{formatNumber(row.leads)}</td>
+                        <td>{formatNumber(row.leadsBooked)}</td>
+                        <td>{formatNumber(row.appointmentsThisMonth)}</td>
+                        <td>{formatNumber(row.appointmentsCompleted)}</td>
+                        <td className="branch-actions">
+                          <Link to={ROUTES.admin.branches} className="branch-action-btn branch-action-view">Manage →</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
             <p className="admin-chart-empty">No branch overview data.</p>
           )}
+          </div>
         </section>
-        <section className="content-card admin-table-card">
+        <section className="content-card admin-table-card admin-settlements-card">
           <div className="admin-table-header">
             <h3>Recent settlements</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div className="admin-table-header-actions">
               <button type="button" className="admin-table-refresh" onClick={loadSettlements} aria-label="Refresh settlements">↻</button>
               <Link to={ROUTES.admin.settlements} className="stat-link">View all →</Link>
             </div>
           </div>
+          <div className="admin-table-card-body">
           {settlementsLoading && !settlements.length ? (
             <div className="admin-chart-loading"><div className="spinner" /><span>Loading...</span></div>
           ) : settlements.length > 0 ? (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>From → To</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {settlements.slice(0, 10).map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.fromBranch} → {s.toBranch}</td>
-                      <td>{formatCurrency(s.amount)}</td>
-                      <td><span className={`settlement-status settlement-status-${s.status?.toLowerCase()}`}>{s.status}</span></td>
+            <>
+              <div className="admin-dashboard-mobile-cards admin-settlements-mobile">
+                {settlements.slice(0, 10).map((s) => (
+                  <div key={s.id} className="admin-dashboard-mobile-card">
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">From → To</span>
+                      <span className="admin-dashboard-mobile-value">{s.fromBranch} → {s.toBranch}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Amount</span>
+                      <span className="admin-dashboard-mobile-value">{formatCurrency(s.amount)}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Status</span>
+                      <span className="admin-dashboard-mobile-value"><span className={`settlement-status settlement-status-${s.status?.toLowerCase()}`}>{s.status}</span></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-table-wrap admin-settlements-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>From → To</th>
+                      <th>Amount</th>
+                      <th>Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {settlements.slice(0, 10).map((s) => (
+                      <tr key={s.id}>
+                        <td>{s.fromBranch} → {s.toBranch}</td>
+                        <td>{formatCurrency(s.amount)}</td>
+                        <td><span className={`settlement-status settlement-status-${s.status?.toLowerCase()}`}>{s.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
-            <p className="admin-chart-empty">No settlements.</p>
+            <p className="admin-chart-empty">No settlements yet. Settlements appear when branches use memberships sold by another branch.</p>
           )}
+          </div>
         </section>
-        <section className="content-card admin-table-card">
+        <section className="content-card admin-table-card admin-branch-sales-card">
           <div className="admin-table-header">
             <h3>Branch Sales Data</h3>
             <div className="admin-branch-sales-header">
+              <label htmlFor="admin-dashboard-branch-select" className="admin-branch-sales-label">Select a branch</label>
               <select
+                id="admin-dashboard-branch-select"
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
                 className="admin-branch-sales-select"
-                aria-label="Select branch"
+                aria-label="Select a branch"
               >
-                <option value="">Select branch…</option>
+                <option value="">Select a branch…</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -364,48 +416,81 @@ export default function AdminDashboardPage() {
               )}
             </div>
           </div>
+          <div className="admin-table-card-body">
           {!selectedBranchId ? (
-            <p className="admin-chart-empty">Select a branch to view its Sales Data.</p>
+            <p className="admin-chart-empty">Select a branch above to view its Sales Data.</p>
           ) : branchSalesLoading ? (
             <div className="admin-chart-loading"><div className="spinner" /><span>Loading...</span></div>
           ) : branchSalesImages.length === 0 ? (
             <p className="admin-chart-empty">No Sales Data for this branch.</p>
           ) : (
-            <div className="admin-table-wrap">
-              <table className="admin-table admin-table-clickable">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Date</th>
-                    <th>Sales count</th>
-                    <th>Amount</th>
-                    <th className="th-actions">View</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {branchSalesImages.map((img) => (
-                    <tr
-                      key={img.id}
-                      onClick={() => handleViewBranchReceipt(img.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && handleViewBranchReceipt(img.id)}
-                    >
-                      <td><strong>{img.title}</strong></td>
-                      <td>{new Date(img.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                      <td>{img.manualSalesCount ?? img.salesCount}</td>
-                      <td>{(img.salesAmount != null && img.salesAmount > 0) ? formatCurrency(img.salesAmount) : '—'}</td>
-                      <td className="branch-actions">
-                        <span className="branch-action-btn branch-action-view">View receipt →</span>
-                      </td>
+            <>
+              <div className="admin-dashboard-mobile-cards admin-branch-sales-mobile">
+                {branchSalesImages.map((img) => (
+                  <div
+                    key={img.id}
+                    className="admin-dashboard-mobile-card admin-dashboard-mobile-card-clickable"
+                    onClick={() => handleViewBranchReceipt(img.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && handleViewBranchReceipt(img.id)}
+                  >
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Title</span>
+                      <span className="admin-dashboard-mobile-value"><strong>{img.title}</strong></span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Date</span>
+                      <span className="admin-dashboard-mobile-value">{new Date(img.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-row">
+                      <span className="admin-dashboard-mobile-label">Sales count / Amount</span>
+                      <span className="admin-dashboard-mobile-value">{img.manualSalesCount ?? img.salesCount} / {(img.salesAmount != null && img.salesAmount > 0) ? formatCurrency(img.salesAmount) : '—'}</span>
+                    </div>
+                    <div className="admin-dashboard-mobile-card-actions">
+                      <span className="branch-action-btn branch-action-view">View receipt →</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-table-wrap admin-branch-sales-table-wrap">
+                <table className="admin-table admin-table-clickable">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Date</th>
+                      <th>Sales count</th>
+                      <th>Amount</th>
+                      <th className="th-actions">View</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {branchSalesImages.map((img) => (
+                      <tr
+                        key={img.id}
+                        onClick={() => handleViewBranchReceipt(img.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && handleViewBranchReceipt(img.id)}
+                      >
+                        <td><strong>{img.title}</strong></td>
+                        <td>{new Date(img.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                        <td>{img.manualSalesCount ?? img.salesCount}</td>
+                        <td>{(img.salesAmount != null && img.salesAmount > 0) ? formatCurrency(img.salesAmount) : '—'}</td>
+                        <td className="branch-actions">
+                          <span className="branch-action-btn branch-action-view">View receipt →</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
+          </div>
         </section>
       </div>
+      </section>
 
       {viewImageDetail && (
         <div

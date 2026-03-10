@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { getBranches, createBranch, updateBranch, deleteBranch } from '../api/branches';
+import { getSettings } from '../api/settings';
 import { useAuth } from '../auth/hooks/useAuth';
 import type { Branch } from '../types/crm';
 
@@ -22,6 +23,7 @@ export default function BranchesPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [showImportButton, setShowImportButton] = useState(true);
   const isAdmin = user?.role === 'admin';
   const PAGE_SIZE = 10;
   const totalPages = Math.max(1, Math.ceil(branches.length / PAGE_SIZE));
@@ -38,6 +40,14 @@ export default function BranchesPage() {
 
   useEffect(() => {
     loadBranches();
+  }, []);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
+        setShowImportButton(r.settings.showImportButton);
+      }
+    });
   }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -166,18 +176,20 @@ export default function BranchesPage() {
             <button type="button" className="auth-submit" style={{ marginBottom: '1rem', width: 'auto' }} onClick={() => setShowForm(!showForm)}>
               {showForm ? 'Cancel' : 'Add branch'}
             </button>
-            <label className="branches-import-btn">
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".json,application/json"
-                className="branches-import-input"
-                aria-label="Import branches from JSON"
-                onChange={handleImportFile}
-                disabled={importing}
-              />
-              {importing ? 'Importing…' : 'Import from JSON'}
-            </label>
+            {showImportButton && (
+              <label className="branches-import-btn">
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="branches-import-input"
+                  aria-label="Import branches from JSON"
+                  onChange={handleImportFile}
+                  disabled={importing}
+                />
+                {importing ? 'Importing…' : 'Import from JSON'}
+              </label>
+            )}
           </div>
         )}
         {importResult && (
@@ -196,11 +208,42 @@ export default function BranchesPage() {
         {error && <div className="auth-error vendors-error">{error}</div>}
         {branches.length > 0 ? (
           <>
-            <p className="customers-showing-count text-muted">
-              Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, branches.length)} of {branches.length} branch{branches.length !== 1 ? 'es' : ''}
-            </p>
-            <div className="data-table-wrap">
-              <table className="data-table">
+            <section className="branches-section">
+              <h2 className="branches-section-title">Branch list</h2>
+              <p className="customers-showing-count text-muted">
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, branches.length)} of {branches.length} branch{branches.length !== 1 ? 'es' : ''}
+              </p>
+              {/* Mobile: card list (managed format) */}
+              <div className="branches-mobile-cards">
+              {paginatedBranches.map((b) => (
+                <div key={b.id} className="branch-mobile-card">
+                  <div className="branch-mobile-card-main">
+                    <div className="branch-mobile-card-row">
+                      <span className="branch-mobile-label">Name</span>
+                      <span className="branch-mobile-value"><strong>{b.name}</strong></span>
+                    </div>
+                    <div className="branch-mobile-card-row">
+                      <span className="branch-mobile-label">Address</span>
+                      <span className="branch-mobile-value">{b.address || '—'}</span>
+                    </div>
+                    <div className="branch-mobile-card-row">
+                      <span className="branch-mobile-label">Zip code</span>
+                      <span className="branch-mobile-value">{b.zipCode || '—'}</span>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="branch-mobile-card-actions">
+                      <button type="button" className="branch-action-btn branch-action-view" onClick={() => setViewingBranch(b)} title="View">View</button>
+                      <button type="button" className="branch-action-btn branch-action-edit" onClick={() => openEdit(b)} title="Edit">Edit</button>
+                      <button type="button" className="branch-action-btn branch-action-delete" onClick={() => setDeletingBranchId(b.id)} title="Delete">Delete</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* Desktop: table */}
+            <div className="data-table-wrap branches-table-wrap">
+              <table className="data-table branches-table">
                 <thead>
                   <tr>
                     <th>Name</th>
@@ -227,13 +270,14 @@ export default function BranchesPage() {
                 </tbody>
               </table>
             </div>
-            {totalPages > 1 && (
-              <div className="customers-pagination">
-                <button type="button" className="pagination-btn" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Previous page">Previous</button>
-                <span className="pagination-info">Page {currentPage} of {totalPages}</span>
-                <button type="button" className="pagination-btn" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} aria-label="Next page">Next</button>
-              </div>
-            )}
+              {totalPages > 1 && (
+                <div className="customers-pagination">
+                  <button type="button" className="pagination-btn" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Previous page">Previous</button>
+                  <span className="pagination-info">Page {currentPage} of {totalPages}</span>
+                  <button type="button" className="pagination-btn" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} aria-label="Next page">Next</button>
+                </div>
+              )}
+            </section>
           </>
         ) : (
           <p className="vendors-empty">

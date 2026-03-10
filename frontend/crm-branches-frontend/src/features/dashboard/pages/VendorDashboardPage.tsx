@@ -228,58 +228,6 @@ export default function VendorDashboardPage() {
         </section>
       )}
 
-      {(data?.membershipsExpiringIn7Days !== undefined && data.membershipsExpiringIn7Days > 0) || (data?.membershipsExpiringIn30Days !== undefined && data.membershipsExpiringIn30Days > 0) || (data?.expiredMembershipCount !== undefined && data.expiredMembershipCount > 0) ? (
-        <section className="content-card membership-expiry-notification" style={{ marginBottom: '1.5rem' }}>
-          <h3 className="vendor-dashboard-section-title" style={{ marginTop: 0 }}>Membership expiry</h3>
-          <p className="text-muted" style={{ marginBottom: '1rem' }}>Notify customers to renew before their membership expires.</p>
-          <div className="vendor-expiry-alerts">
-            {data.membershipsExpiringIn7Days !== undefined && data.membershipsExpiringIn7Days > 0 && (
-              <div className="vendor-expiry-alert vendor-expiry-soon">
-                <strong>{data.membershipsExpiringIn7Days}</strong> membership{data.membershipsExpiringIn7Days !== 1 ? 's' : ''} expiring in the next 7 days
-              </div>
-            )}
-            {data.membershipsExpiringIn30Days !== undefined && data.membershipsExpiringIn30Days > 0 && data.membershipsExpiringIn7Days !== data.membershipsExpiringIn30Days && (
-              <div className="vendor-expiry-alert vendor-expiry-30">
-                <strong>{data.membershipsExpiringIn30Days}</strong> membership{data.membershipsExpiringIn30Days !== 1 ? 's' : ''} expiring in the next 30 days
-              </div>
-            )}
-            {data.expiredMembershipCount !== undefined && data.expiredMembershipCount > 0 && (
-              <div className="vendor-expiry-alert vendor-expiry-expired">
-                <strong>{data.expiredMembershipCount}</strong> membership{data.expiredMembershipCount !== 1 ? 's' : ''} already expired
-              </div>
-            )}
-          </div>
-          <Link to={ROUTES.vendor.memberships} className="filter-btn" style={{ marginTop: '0.75rem', display: 'inline-block' }}>View memberships →</Link>
-          {data.membershipsExpiringSoonList && data.membershipsExpiringSoonList.length > 0 && (
-            <div style={{ marginTop: '1rem' }}>
-              <h4 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>Expiring soon (next 7 days)</h4>
-              <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Customer</th>
-                      <th>Package</th>
-                      <th>Expiry date</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.membershipsExpiringSoonList.map((m) => (
-                      <tr key={m.id}>
-                        <td>{m.customerName}{m.customerPhone ? ` (${m.customerPhone})` : ''}</td>
-                        <td>{m.packageName}</td>
-                        <td>{m.expiryDate ? new Date(m.expiryDate).toLocaleDateString() : '—'}</td>
-                        <td><Link to={ROUTES.vendor.membershipDetail(m.id)}>View</Link></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </section>
-      ) : null}
-
       <h3 className="vendor-dashboard-section-title">Branch overview</h3>
       <div className="vendor-dashboard-charts-top">
         <section className="content-card vendor-chart-card">

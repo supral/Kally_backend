@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { getPackages, createPackage, updatePackage, deletePackage } from '../../../api/packages';
+import { getSettings } from '../../../api/settings';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import { formatCurrency } from '../../../utils/money';
 import type { PackageItem } from '../../../api/packages';
@@ -30,6 +31,7 @@ export default function AdminPackagesPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [showImportButton, setShowImportButton] = useState(true);
   const PAGE_SIZE = 10;
   const totalPages = Math.max(1, Math.ceil(packages.length / PAGE_SIZE));
   const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -46,6 +48,14 @@ export default function AdminPackagesPage() {
   useEffect(() => {
     loadPackages();
   }, [loadPackages]);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
+        setShowImportButton(r.settings.showImportButton);
+      }
+    });
+  }, []);
 
   const calculatedSettlement = useMemo(() => {
     const p = parseFloat(price);
@@ -226,7 +236,7 @@ export default function AdminPackagesPage() {
             >
               {showForm ? 'Cancel' : 'Add package'}
             </button>
-            {isAdmin && (
+            {isAdmin && showImportButton && (
               <label className="packages-import-btn">
                 <input
                   ref={importInputRef}
@@ -289,7 +299,80 @@ export default function AdminPackagesPage() {
             <p className="packages-page-count text-muted">
               Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, packages.length)} of {packages.length} package{packages.length !== 1 ? 's' : ''}
             </p>
-            <div className="data-table-wrap">
+            {/* Mobile: card list */}
+            <div className="packages-mobile-cards">
+              {editingId && isAdmin && (
+                <div className="packages-mobile-edit-form">
+                  <h3 className="packages-mobile-edit-title">Edit package</h3>
+                  <form onSubmit={handleUpdate} className="packages-page-inline-form">
+                    <label><span>Name</span><input value={editName} onChange={(e) => setEditName(e.target.value)} required /></label>
+                    <label><span>Price</span><input type="number" min={0} step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} required /></label>
+                    <label><span>Discount amount</span><input type="number" min={0} step="0.01" value={editDiscountAmount} onChange={(e) => setEditDiscountAmount(e.target.value)} placeholder="0" /></label>
+                    <label><span>No. of sessions</span><input type="number" min={1} step={1} value={editTotalSessions} onChange={(e) => setEditTotalSessions(e.target.value)} required /></label>
+                    <label><span>Settlement (calculated)</span><input type="text" value={editCalculatedSettlement != null ? formatCurrency(editCalculatedSettlement) : '—'} readOnly className="readonly-input" /></label>
+                    <div className="packages-page-inline-actions">
+                      <button type="submit" className="filter-btn packages-btn-save">Save</button>
+                      <button type="button" className="filter-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+              {paginatedPackages.map((p) => (
+                <div key={p.id} className="package-mobile-card">
+                  <div className="package-mobile-card-main">
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Name</span>
+                      <span className="package-mobile-value"><strong>{p.name}</strong></span>
+                    </div>
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Price</span>
+                      <span className="package-mobile-value">{formatCurrency(p.price)}</span>
+                    </div>
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Discount</span>
+                      <span className="package-mobile-value">{(p.discountAmount ?? 0) > 0 ? formatCurrency(p.discountAmount!) : '—'}</span>
+                    </div>
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Sessions</span>
+                      <span className="package-mobile-value">{p.totalSessions ?? '—'}</span>
+                    </div>
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Settlement</span>
+                      <span className="package-mobile-value">{p.settlementAmount != null ? formatCurrency(p.settlementAmount) : '—'}</span>
+                    </div>
+                    <div className="package-mobile-card-row">
+                      <span className="package-mobile-label">Status</span>
+                      <span className="package-mobile-value">
+                        <span className={`status-badge status-${p.isActive === false ? 'rejected' : 'approved'}`}>
+                          {p.isActive === false ? 'Inactive' : 'Active'}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                  {p.isActive !== false && isAdmin && (
+                    <div className="package-mobile-card-actions">
+                      <button
+                        type="button"
+                        className="filter-btn"
+                        onClick={() => { setEditingId(p.id); setEditName(p.name); setEditPrice(String(p.price)); setEditDiscountAmount((p.discountAmount ?? 0) > 0 ? String(p.discountAmount) : ''); setEditTotalSessions(String(p.totalSessions ?? 1)); setError(''); }}
+                      >
+                        Edit
+                      </button>
+                      {deleteConfirmId === p.id ? (
+                        <>
+                          <button type="button" className="filter-btn packages-btn-delete-confirm" onClick={() => handleDelete(p.id)}>Confirm delete</button>
+                          <button type="button" className="filter-btn" onClick={() => setDeleteConfirmId(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button type="button" className="filter-btn packages-btn-delete" onClick={() => setDeleteConfirmId(p.id)}>Delete</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* Desktop: table */}
+            <div className="data-table-wrap packages-table-wrap">
               <table className="data-table packages-table">
                 <thead>
                   <tr>

@@ -3,6 +3,7 @@ import { getMemberships, createMembership, importMemberships, recordMembershipUs
 import { getCustomers } from '../api/customers';
 import { getBranches } from '../api/branches';
 import { getPackages } from '../api/packages';
+import { getSettings } from '../api/settings';
 import { useAuth } from '../auth/hooks/useAuth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { formatCurrency } from '../utils/money';
@@ -41,6 +42,7 @@ export default function MembershipsList() {
   const [importResult, setImportResult] = useState<{ imported: number; createdCustomers: number; errors: { row: number; message: string }[] } | null>(null);
   const [sessionsImporting, setSessionsImporting] = useState(false);
   const [sessionsImportResult, setSessionsImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
+  const [showImportButton, setShowImportButton] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [deleteConfirmError, setDeleteConfirmError] = useState('');
@@ -125,6 +127,14 @@ export default function MembershipsList() {
       setCreateCustomerId(customerIdFromUrl);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
+        setShowImportButton(r.settings.showImportButton);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -714,31 +724,35 @@ export default function MembershipsList() {
           >
             Export to CSV / Excel
           </button>
-          <label className="memberships-import-btn">
-            <input
-              type="file"
-              accept=".csv,.txt,.json,text/csv,application/csv,application/json"
-              className="memberships-import-input"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleImportFile(f);
-                e.target.value = '';
-              }}
-              disabled={importing}
-            />
-            {importing ? 'Importing…' : 'Import (CSV or JSON)'}
-          </label>
-          <label className="memberships-import-btn">
-            <input
-              type="file"
-              accept=".json,application/json"
-              className="memberships-import-input"
-              aria-label="Import sessions from JSON"
-              onChange={handleImportSessionsFile}
-              disabled={sessionsImporting}
-            />
-            {sessionsImporting ? 'Importing sessions…' : 'Import sessions (JSON)'}
-          </label>
+          {showImportButton && (
+            <>
+              <label className="memberships-import-btn">
+                <input
+                  type="file"
+                  accept=".csv,.txt,.json,text/csv,application/csv,application/json"
+                  className="memberships-import-input"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImportFile(f);
+                    e.target.value = '';
+                  }}
+                  disabled={importing}
+                />
+                {importing ? 'Importing…' : 'Import (CSV or JSON)'}
+              </label>
+              <label className="memberships-import-btn">
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="memberships-import-input"
+                  aria-label="Import sessions from JSON"
+                  onChange={handleImportSessionsFile}
+                  disabled={sessionsImporting}
+                />
+                {sessionsImporting ? 'Importing sessions…' : 'Import sessions (JSON)'}
+              </label>
+            </>
+          )}
         </div>
         {importResult && (
           <div className="memberships-import-result" role="status">
@@ -776,8 +790,71 @@ export default function MembershipsList() {
           <p className="vendors-empty">No memberships match your search.</p>
         ) : (
           <>
-            <div className="data-table-wrap">
-              <table className="data-table">
+            {/* Mobile: card list */}
+            <div className="memberships-mobile-cards">
+              {paginatedMemberships.map((m) => {
+                const remaining = m.remainingCredits ?? m.totalCredits - m.usedCredits;
+                return (
+                  <div
+                    key={m.id}
+                    className="membership-mobile-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`${basePath}/memberships/${m.id}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`${basePath}/memberships/${m.id}`); } }}
+                  >
+                    <div className="membership-mobile-card-main">
+                      <div className="membership-mobile-card-row">
+                        <span className="membership-mobile-label">Customer</span>
+                        <span className="membership-mobile-value"><strong>{m.customer?.name || '—'}</strong> {m.customer?.phone && `(${m.customer.phone})`}</span>
+                      </div>
+                      <div className="membership-mobile-card-row">
+                        <span className="membership-mobile-label">Total / Used / Remaining</span>
+                        <span className="membership-mobile-value">{m.totalCredits} / {m.usedCredits} / {remaining}</span>
+                      </div>
+                      <div className="membership-mobile-card-row">
+                        <span className="membership-mobile-label">Package</span>
+                        <span className="membership-mobile-value">{m.packageName || m.typeName || '—'}</span>
+                      </div>
+                      <div className="membership-mobile-card-row">
+                        <span className="membership-mobile-label">Sold at</span>
+                        <span className="membership-mobile-value">{m.soldAtBranch || '—'}</span>
+                      </div>
+                      <div className="membership-mobile-card-row">
+                        <span className="membership-mobile-label">Status</span>
+                        <span className="membership-mobile-value">
+                          <span className={`status-badge status-${m.status === 'active' ? 'approved' : m.status === 'used' ? 'rejected' : 'pending'}`}>{m.status}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="membership-mobile-card-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="filter-btn"
+                        onClick={() => navigate(`${basePath}/memberships/${m.id}`)}
+                        title="View / Edit"
+                      >
+                        Edit
+                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-reject"
+                          onClick={() => openDeleteConfirm(m.id)}
+                          disabled={deletingId !== null}
+                          title="Delete membership"
+                        >
+                          {deletingId === m.id ? '…' : 'Delete'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Desktop: table */}
+            <div className="data-table-wrap memberships-table-wrap">
+              <table className="data-table memberships-table">
                 <thead>
                   <tr>
                     <th>Customer</th>

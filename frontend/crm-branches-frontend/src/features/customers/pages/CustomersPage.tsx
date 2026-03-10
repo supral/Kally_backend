@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { getCustomers, createCustomer } from '../../../api/customers';
 import { getBranches } from '../../../api/branches';
+import { getSettings } from '../../../api/settings';
 import { useAuth } from '../../../auth/hooks/useAuth';
 import type { Customer, Branch } from '../../../types/common';
 
@@ -24,6 +25,7 @@ export default function CustomersPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: number; fail: number; skipped: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [showImportButton, setShowImportButton] = useState(true);
   const isAdmin = user?.role === 'admin';
   const PAGE_SIZE = 10;
   const basePath = isAdmin ? '/admin' : '/vendor';
@@ -82,6 +84,14 @@ export default function CustomersPage() {
 
   useEffect(() => {
     getBranches({ all: true }).then((r) => r.success && r.branches && setBranches(r.branches || []));
+  }, []);
+
+  useEffect(() => {
+    getSettings().then((r) => {
+      if (r.success && r.settings && typeof r.settings.showImportButton === 'boolean') {
+        setShowImportButton(r.settings.showImportButton);
+      }
+    });
   }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -204,18 +214,20 @@ export default function CustomersPage() {
           <button type="button" className="auth-submit" style={{ width: 'auto' }} onClick={() => setShowForm(!showForm)}>
             {showForm ? 'Cancel' : 'Add customer'}
           </button>
-          <label className="customers-import-btn">
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".json,application/json"
-              className="customers-import-input"
-              aria-label="Import customers from JSON"
-              onChange={handleImportFile}
-              disabled={importing}
-            />
-            {importing ? 'Importing…' : 'Import from JSON'}
-          </label>
+          {showImportButton && (
+            <label className="customers-import-btn">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="customers-import-input"
+                aria-label="Import customers from JSON"
+                onChange={handleImportFile}
+                disabled={importing}
+              />
+              {importing ? 'Importing…' : 'Import from JSON'}
+            </label>
+          )}
         </div>
         {importResult && (
           <p className="customers-import-result">
@@ -285,25 +297,85 @@ export default function CustomersPage() {
               >
                 Export to CSV / Excel
               </button>
-              <label className="customers-import-btn customers-import-btn-inline">
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  className="customers-import-input"
-                  aria-label="Import customers from JSON"
-                  onChange={handleImportFile}
-                  disabled={importing}
-                />
-                {importing ? 'Importing…' : 'Import from JSON'}
-              </label>
+              {showImportButton && (
+                <label className="customers-import-btn customers-import-btn-inline">
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="customers-import-input"
+                    aria-label="Import customers from JSON"
+                    onChange={handleImportFile}
+                    disabled={importing}
+                  />
+                  {importing ? 'Importing…' : 'Import from JSON'}
+                </label>
+              )}
             </div>
             {totalFiltered > 0 && (
               <p className="customers-showing-count text-muted">
                 Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, totalFiltered)} of {totalFiltered} customer{totalFiltered !== 1 ? 's' : ''}
               </p>
             )}
-            <div className="data-table-wrap">
-              <table className="data-table">
+            {/* Mobile: card list */}
+            <div className="customers-mobile-cards">
+              {paginatedCustomers.map((c) => (
+                <div
+                  key={c.id}
+                  className="customer-mobile-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`${basePath}/customers/${c.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`${basePath}/customers/${c.id}`); } }}
+                >
+                  <div className="customer-mobile-card-main">
+                    <div className="customer-mobile-card-row">
+                      <span className="customer-mobile-label">Card ID</span>
+                      <span className="customer-mobile-value">{c.membershipCardId || '—'}</span>
+                    </div>
+                    <div className="customer-mobile-card-row">
+                      <span className="customer-mobile-label">Name</span>
+                      <span className="customer-mobile-value"><strong>{c.name}</strong></span>
+                    </div>
+                    <div className="customer-mobile-card-row">
+                      <span className="customer-mobile-label">Phone</span>
+                      <span className="customer-mobile-value">{c.phone}</span>
+                    </div>
+                    <div className="customer-mobile-card-row">
+                      <span className="customer-mobile-label">Email</span>
+                      <span className="customer-mobile-value">{c.email || '—'}</span>
+                    </div>
+                    <div className="customer-mobile-card-row">
+                      <span className="customer-mobile-label">Branch</span>
+                      <span className="customer-mobile-value">{c.primaryBranch || '—'}</span>
+                    </div>
+                  </div>
+                  <div className="customer-mobile-card-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="filter-btn"
+                      onClick={() => navigate(`${basePath}/customers/${c.id}`)}
+                      title="View customer"
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="filter-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`${basePath}/memberships?customerId=${c.id}`);
+                      }}
+                      title="Create membership"
+                    >
+                      Create membership
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop: table */}
+            <div className="data-table-wrap customers-table-wrap">
+              <table className="data-table customers-table">
                 <thead>
                   <tr>
                     <th>Card ID</th>

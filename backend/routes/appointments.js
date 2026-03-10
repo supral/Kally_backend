@@ -93,14 +93,17 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Only admins can update appointment status.' });
-    }
     const appointment = await Appointment.findById(req.params.id);
     if (!appointment) return res.status(404).json({ success: false, message: 'Appointment not found.' });
-    const filter = appointmentFilter(req);
-    if (filter.branchId && String(appointment.branchId) !== String(filter.branchId))
-      return res.status(404).json({ success: false, message: 'Appointment not found.' });
+
+    if (req.user.role === 'admin') {
+      const filter = appointmentFilter(req);
+      if (filter.branchId && String(appointment.branchId) !== String(filter.branchId))
+        return res.status(404).json({ success: false, message: 'Appointment not found.' });
+    } else {
+      if (!req.user.branchId || String(appointment.branchId) !== String(req.user.branchId))
+        return res.status(403).json({ success: false, message: 'You can only update appointments assigned to your branch.' });
+    }
 
     const { status } = req.body;
     if (status !== undefined) {

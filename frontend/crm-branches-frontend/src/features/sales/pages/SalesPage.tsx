@@ -250,25 +250,27 @@ export default function SalesPage() {
 
   return (
     <div className="dashboard-content sales-page">
-      <header className="page-hero">
-        <h1 className="page-hero-title">Sales dashboard</h1>
-        <p className="page-hero-subtitle">
-          Full visibility across branches: revenue, memberships, appointments, and manual sales.
-        </p>
-        <div className="sales-dashboard-filters">
+      <header className="page-hero sales-page-hero">
+        <div className="sales-page-hero-inner">
+          <h1 className="page-hero-title">Sales dashboard</h1>
+          <p className="page-hero-subtitle">
+            Revenue, memberships, appointments, and manual sales across branches.
+          </p>
+        </div>
+        <div className="sales-dashboard-filters sales-page-filters">
           <label>
             <span>From</span>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="sales-dashboard-date-input" />
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="sales-dashboard-date-input" aria-label="Date from" />
           </label>
           <label>
             <span>To</span>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="sales-dashboard-date-input" />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="sales-dashboard-date-input" aria-label="Date to" />
           </label>
           {isAdmin && (
             <>
               <label>
                 <span>Branch</span>
-                <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                <select value={branchId} onChange={(e) => setBranchId(e.target.value)} aria-label="Filter by branch">
                   <option value="">All branches</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
@@ -277,7 +279,7 @@ export default function SalesPage() {
               </label>
               <label>
                 <span>Package</span>
-                <select value={packageId} onChange={(e) => setPackageId(e.target.value)}>
+                <select value={packageId} onChange={(e) => setPackageId(e.target.value)} aria-label="Filter by package">
                   <option value="">All packages</option>
                   {packages.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
@@ -289,115 +291,111 @@ export default function SalesPage() {
         </div>
       </header>
 
-      {/* Summary stats */}
+      {/* Key metrics */}
       {!overviewLoading && (isAdmin || data) && (
-        <section className="content-card" style={{ marginBottom: '1.25rem' }}>
-          <div className="owner-hero-stats" style={{ marginTop: 0, marginBottom: 0 }}>
-            {isAdmin && (
-              <>
-                <div className="owner-hero-stat">
-                  <span className="owner-hero-stat-value">{branches.length}</span>
-                  <span className="owner-hero-stat-label">Branches</span>
-                </div>
-                <div className="owner-hero-stat">
-                  <span className="owner-hero-stat-value">{formatNumber(totalMemberships)}</span>
-                  <span className="owner-hero-stat-label">Memberships sold</span>
-                </div>
-                <div className="owner-hero-stat">
-                  <span className="owner-hero-stat-value">{formatNumber(totalAppointments)}</span>
-                  <span className="owner-hero-stat-label">Appointments this month</span>
-                </div>
-              </>
-            )}
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading || dashboardManualSalesLoading ? '…' : formatCurrency(membershipSales)}
-              </span>
-              <span className="owner-hero-stat-label">Membership sales {isAdmin && !branchId ? '(all branches)' : ''}</span>
+        <section className="sales-section sales-section-kpis" aria-labelledby="sales-kpis-title">
+          <h2 id="sales-kpis-title" className="sales-section-title">Key metrics</h2>
+          <div className="content-card sales-kpis-card">
+            <div className="sales-kpis-grid">
+              {isAdmin && (
+                <>
+                  <div className="sales-kpi">
+                    <span className="sales-kpi-value">{branches.length}</span>
+                    <span className="sales-kpi-label">Branches</span>
+                  </div>
+                  <div className="sales-kpi">
+                    <span className="sales-kpi-value">{formatNumber(totalMemberships)}</span>
+                    <span className="sales-kpi-label">Memberships sold</span>
+                  </div>
+                  <div className="sales-kpi">
+                    <span className="sales-kpi-value">{formatNumber(totalAppointments)}</span>
+                    <span className="sales-kpi-label">Appointments (month)</span>
+                  </div>
+                </>
+              )}
+              <div className="sales-kpi sales-kpi-highlight">
+                <span className="sales-kpi-value">
+                  {loading || dashboardManualSalesLoading ? '…' : formatCurrency(totalSales)}
+                </span>
+                <span className="sales-kpi-label">Total sales {isAdmin && !branchId ? '(all branches)' : ''}</span>
+              </div>
+              <div className="sales-kpi">
+                <span className="sales-kpi-value">
+                  {loading || dashboardManualSalesLoading ? '…' : formatCurrency(membershipSales)}
+                </span>
+                <span className="sales-kpi-label">Membership revenue</span>
+              </div>
             </div>
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading || dashboardManualSalesLoading ? '…' : formatCurrency(totalSales)}
-              </span>
-              <span className="owner-hero-stat-label">Total sales (membership + manual) {isAdmin && !branchId ? '(all branches)' : ''}</span>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Membership sales section */}
-      {(isAdmin || data) && (
-        <section className="content-card" style={{ marginBottom: '1.25rem' }}>
-          <h2 className="page-section-title" style={{ marginTop: 0 }}>Membership sales</h2>
-          <p className="text-muted" style={{ marginBottom: '1rem' }}>
-            Revenue from membership packages sold. Total sales above also includes manually recorded daily sales amounts.
-          </p>
-          <div className="owner-hero-stats" style={{ marginTop: 0, marginBottom: 0, flexWrap: 'wrap' }}>
-            <div className="owner-hero-stat">
-              <span className="owner-hero-stat-value">
-                {loading ? '…' : formatCurrency(membershipSales)}
-              </span>
-              <span className="owner-hero-stat-label">Membership sales total {isAdmin && !branchId ? '(all branches)' : ''}</span>
-            </div>
+            <p className="sales-kpis-note text-muted">
+              Total sales includes membership revenue and manually recorded daily sales.
+            </p>
           </div>
         </section>
       )}
 
       {/* Cross-branch settlement */}
       {isAdmin && settlementSummary.length > 0 && (
-        <section className="content-card owner-settlement" style={{ marginBottom: '1.25rem' }}>
-          <h2 className="owner-section-title">Cross-branch settlement</h2>
-          <p className="owner-section-desc">Outstanding balances for membership services delivered at another branch.</p>
-          <div className="owner-settlement-table-wrap">
-            <table className="owner-settlement-table">
-              <thead>
-                <tr>
-                  <th>From branch</th>
-                  <th>To branch</th>
-                  <th className="owner-settlement-amount">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlementSummary.map((s, i) => (
-                  <tr key={i}>
-                    <td>{s.fromBranch}</td>
-                    <td>{s.toBranch}</td>
-                    <td className="owner-settlement-amount">
-                      {formatCurrency(s.amount)}
-                    </td>
+        <section className="sales-section" aria-labelledby="sales-settlement-title">
+          <h2 id="sales-settlement-title" className="sales-section-title">Cross-branch settlement</h2>
+          <div className="content-card owner-settlement sales-settlement-card">
+            <p className="owner-section-desc sales-section-desc">Outstanding balances for membership services delivered at another branch.</p>
+            <div className="sales-settlement-mobile-cards">
+              {settlementSummary.map((s, i) => (
+                <div key={i} className="sales-mobile-card">
+                  <div className="sales-mobile-card-row">
+                    <span className="sales-mobile-label">From → To</span>
+                    <span className="sales-mobile-value">{s.fromBranch} → {s.toBranch}</span>
+                  </div>
+                  <div className="sales-mobile-card-row">
+                    <span className="sales-mobile-label">Amount</span>
+                    <span className="sales-mobile-value">{formatCurrency(s.amount)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="owner-settlement-table-wrap sales-settlement-table-wrap">
+              <table className="owner-settlement-table">
+                <thead>
+                  <tr>
+                    <th>From branch</th>
+                    <th>To branch</th>
+                    <th className="owner-settlement-amount">Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {settlementSummary.map((s, i) => (
+                    <tr key={i}>
+                      <td>{s.fromBranch}</td>
+                      <td>{s.toBranch}</td>
+                      <td className="owner-settlement-amount">
+                        {formatCurrency(s.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       )}
 
-      {/* Performance by branch – consolidated (no Leads, Leads booked, Lead conversion) */}
-      <section className="content-card">
+      {/* Performance by branch */}
+      <section className="sales-section content-card sales-performance-section" aria-labelledby="sales-performance-title">
         {error && <div className="auth-error">{error}</div>}
         {loading ? (
           <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
         ) : (
           <>
-            <h2 className="page-section-title" style={{ marginTop: 0 }}>Performance by branch</h2>
-            <p className="text-muted" style={{ marginBottom: '0.75rem' }}>Click a branch name to see details and manual sales.</p>
+            <h2 id="sales-performance-title" className="sales-section-title">Performance by branch</h2>
+            <p className="sales-section-desc text-muted">Click a branch name to see details and manual sales.</p>
             {isAdmin && mergedByBranch.length > 0 ? (
-              <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Branch</th>
-                      <th className="num">Memberships sold</th>
-                      <th className="num">Total sales</th>
-                      <th className="num">Appointments this month</th>
-                      <th className="num">Completed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mergedByBranch.map((row) => (
-                      <tr key={row.branch}>
-                        <td>
+              <>
+                <div className="sales-performance-mobile-cards">
+                  {mergedByBranch.map((row) => (
+                    <div key={row.branch} className="sales-mobile-card">
+                      <div className="sales-mobile-card-row">
+                        <span className="sales-mobile-label">Branch</span>
+                        <span className="sales-mobile-value">
                           {row.branchId ? (
                             <button
                               type="button"
@@ -409,37 +407,91 @@ export default function SalesPage() {
                           ) : (
                             <strong>{row.branch}</strong>
                           )}
-                        </td>
-                        <td className="num">{formatNumber(row.membershipCount ?? 0)}</td>
-                        <td className="num">{formatCurrency(row.sales ?? row.revenue)}</td>
-                        <td className="num">{formatNumber(row.appointmentsThisMonth ?? 0)}</td>
-                        <td className="num">{formatNumber(row.appointmentsCompleted ?? 0)}</td>
+                        </span>
+                      </div>
+                      <div className="sales-mobile-card-row">
+                        <span className="sales-mobile-label">Memberships / Sales / Appointments / Completed</span>
+                        <span className="sales-mobile-value">
+                          {formatNumber(row.membershipCount ?? 0)} / {formatCurrency(row.sales ?? row.revenue)} / {formatNumber(row.appointmentsThisMonth ?? 0)} / {formatNumber(row.appointmentsCompleted ?? 0)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="data-table-wrap sales-performance-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Branch</th>
+                        <th className="num">Memberships sold</th>
+                        <th className="num">Total sales</th>
+                        <th className="num">Appointments this month</th>
+                        <th className="num">Completed</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {mergedByBranch.map((row) => (
+                        <tr key={row.branch}>
+                          <td>
+                            {row.branchId ? (
+                              <button
+                                type="button"
+                                className="branch-name-link"
+                                onClick={() => setSelectedBranchId(row.branchId!)}
+                              >
+                                {row.branch}
+                              </button>
+                            ) : (
+                              <strong>{row.branch}</strong>
+                            )}
+                          </td>
+                          <td className="num">{formatNumber(row.membershipCount ?? 0)}</td>
+                          <td className="num">{formatCurrency(row.sales ?? row.revenue)}</td>
+                          <td className="num">{formatNumber(row.appointmentsThisMonth ?? 0)}</td>
+                          <td className="num">{formatNumber(row.appointmentsCompleted ?? 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : !isAdmin && data && (data.breakdown?.length ?? 0) > 0 ? (
-              <div className="data-table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Customer name</th>
-                      <th>Package name</th>
-                      <th className="num">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data.breakdown || []).map((row, i) => (
-                      <tr key={`${row.customerName}-${row.packageName}-${i}`}>
-                        <td>{row.customerName}</td>
-                        <td>{row.packageName}</td>
-                        <td className="num">{formatCurrency(row.price)}</td>
+              <>
+                <div className="sales-performance-mobile-cards sales-breakdown-mobile">
+                  {(data.breakdown || []).map((row, i) => (
+                    <div key={`${row.customerName}-${row.packageName}-${i}`} className="sales-mobile-card">
+                      <div className="sales-mobile-card-row">
+                        <span className="sales-mobile-label">Customer</span>
+                        <span className="sales-mobile-value">{row.customerName}</span>
+                      </div>
+                      <div className="sales-mobile-card-row">
+                        <span className="sales-mobile-label">Package / Price</span>
+                        <span className="sales-mobile-value">{row.packageName} — {formatCurrency(row.price)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="data-table-wrap sales-performance-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Customer name</th>
+                        <th>Package name</th>
+                        <th className="num">Price</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(data.breakdown || []).map((row, i) => (
+                        <tr key={`${row.customerName}-${row.packageName}-${i}`}>
+                          <td>{row.customerName}</td>
+                          <td>{row.packageName}</td>
+                          <td className="num">{formatCurrency(row.price)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <p className="vendors-empty">No data for this period.</p>
             )}
@@ -541,111 +593,148 @@ export default function SalesPage() {
                   </form>
                 )}
 
-                {/* Manual sales table – date, amount, view/download, delete */}
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <h4 className="page-section-title" style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Manual sales</h4>
+                {/* Manual sales */}
+                <div className="sales-branch-detail-block">
+                  <h4 className="sales-branch-detail-subtitle">Manual sales</h4>
                   {manualSalesLoading ? (
                     <div className="loading-placeholder">Loading…</div>
                   ) : manualSales.length === 0 ? (
-                    <p className="text-muted" style={{ margin: 0 }}>No manual sales for this branch in the selected period.</p>
+                    <p className="text-muted sales-branch-detail-empty">No manual sales for this branch in the selected period.</p>
                   ) : (
-                    <div className="data-table-wrap">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th className="num">Amount</th>
-                            <th>Receipt</th>
-                            {isAdmin && <th></th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {manualSales.map((s) => (
-                            <tr key={s.id}>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="branch-name-link"
-                                  onClick={() => s.hasImage && handleViewImage(s.id)}
-                                  title={s.hasImage ? 'Click to view receipt' : undefined}
-                                >
+                    <>
+                      <div className="sales-manual-mobile-cards">
+                        {manualSales.map((s) => (
+                          <div key={s.id} className="sales-mobile-card">
+                            <div className="sales-mobile-card-row">
+                              <span className="sales-mobile-label">Date</span>
+                              <span className="sales-mobile-value">
+                                <button type="button" className="branch-name-link" onClick={() => s.hasImage && handleViewImage(s.id)} title={s.hasImage ? 'View receipt' : undefined}>
                                   {new Date(s.date).toLocaleDateString()}
                                 </button>
-                              </td>
-                              <td className="num">
-                                <button
-                                  type="button"
-                                  className="branch-name-link"
-                                  onClick={() => s.hasImage && handleViewImage(s.id)}
-                                  title={s.hasImage ? 'Click to view receipt' : undefined}
-                                >
+                              </span>
+                            </div>
+                            <div className="sales-mobile-card-row">
+                              <span className="sales-mobile-label">Amount</span>
+                              <span className="sales-mobile-value">
+                                <button type="button" className="branch-name-link" onClick={() => s.hasImage && handleViewImage(s.id)} title={s.hasImage ? 'View receipt' : undefined}>
                                   {formatCurrency(s.amount)}
                                 </button>
-                              </td>
-                              <td>
-                                {s.hasImage ? (
-                                  <span style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <button type="button" className="btn-link" onClick={() => handleViewImage(s.id)}>
-                                      View
-                                    </button>
-                                    <button type="button" className="btn-link" onClick={() => handleDownloadImage(s.id)}>
-                                      Download
-                                    </button>
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">—</span>
-                                )}
-                              </td>
-                              {isAdmin && (
-                                <td>
-                                  <button
-                                    type="button"
-                                    className="btn-danger btn-sm"
-                                    onClick={() => handleDelete(s.id)}
-                                    disabled={!!deletingId}
-                                  >
-                                    {deletingId === s.id ? '…' : 'Delete'}
-                                  </button>
-                                </td>
+                              </span>
+                            </div>
+                            <div className="sales-mobile-card-actions">
+                              {s.hasImage ? (
+                                <span className="sales-mobile-actions-inline">
+                                  <button type="button" className="btn-link" onClick={() => handleViewImage(s.id)}>View</button>
+                                  <button type="button" className="btn-link" onClick={() => handleDownloadImage(s.id)}>Download</button>
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
                               )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                {/* Customer/package breakdown */}
-                <h4 className="page-section-title" style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Membership breakdown</h4>
-                {detailLoading ? (
-                  <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
-                ) : (
-                  <>
-                    {filteredBreakdown.length === 0 ? (
-                      <p className="vendors-empty">No breakdown data for this branch.</p>
-                    ) : (
-                      <div className="data-table-wrap">
+                              {isAdmin && (
+                                <button type="button" className="btn-danger btn-sm" onClick={() => handleDelete(s.id)} disabled={!!deletingId}>
+                                  {deletingId === s.id ? '…' : 'Delete'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="data-table-wrap sales-manual-table-wrap">
                         <table className="data-table">
                           <thead>
                             <tr>
-                              <th>Customer name</th>
-                              <th>Package name</th>
-                              <th className="num">Price</th>
+                              <th>Date</th>
+                              <th className="num">Amount</th>
+                              <th>Receipt</th>
+                              {isAdmin && <th></th>}
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredBreakdown.map((row, i) => (
-                              <tr key={`${row.customerName}-${row.packageName}-${i}`}>
-                                <td>{row.customerName}</td>
-                                <td>{row.packageName}</td>
-                                <td className="num">{formatCurrency(row.price)}</td>
+                            {manualSales.map((s) => (
+                              <tr key={s.id}>
+                                <td>
+                                  <button type="button" className="branch-name-link" onClick={() => s.hasImage && handleViewImage(s.id)} title={s.hasImage ? 'Click to view receipt' : undefined}>
+                                    {new Date(s.date).toLocaleDateString()}
+                                  </button>
+                                </td>
+                                <td className="num">
+                                  <button type="button" className="branch-name-link" onClick={() => s.hasImage && handleViewImage(s.id)} title={s.hasImage ? 'Click to view receipt' : undefined}>
+                                    {formatCurrency(s.amount)}
+                                  </button>
+                                </td>
+                                <td>
+                                  {s.hasImage ? (
+                                    <span className="sales-receipt-actions">
+                                      <button type="button" className="btn-link" onClick={() => handleViewImage(s.id)}>View</button>
+                                      <button type="button" className="btn-link" onClick={() => handleDownloadImage(s.id)}>Download</button>
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted">—</span>
+                                  )}
+                                </td>
+                                {isAdmin && (
+                                  <td>
+                                    <button type="button" className="btn-danger btn-sm" onClick={() => handleDelete(s.id)} disabled={!!deletingId}>
+                                      {deletingId === s.id ? '…' : 'Delete'}
+                                    </button>
+                                  </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                    )}
+                    </>
+                  )}
+                </div>
+
+                {/* Membership breakdown */}
+                <div className="sales-branch-detail-block">
+                  <h4 className="sales-branch-detail-subtitle">Membership breakdown</h4>
+                  {detailLoading ? (
+                    <div className="vendors-loading"><div className="spinner" /><span>Loading...</span></div>
+                  ) : (
+                    <>
+                      {filteredBreakdown.length === 0 ? (
+                        <p className="vendors-empty">No breakdown data for this branch.</p>
+                      ) : (
+                        <>
+                          <div className="sales-breakdown-detail-mobile">
+                            {filteredBreakdown.map((row, i) => (
+                              <div key={`${row.customerName}-${row.packageName}-${i}`} className="sales-mobile-card">
+                                <div className="sales-mobile-card-row">
+                                  <span className="sales-mobile-label">Customer</span>
+                                  <span className="sales-mobile-value">{row.customerName}</span>
+                                </div>
+                                <div className="sales-mobile-card-row">
+                                  <span className="sales-mobile-label">Package / Price</span>
+                                  <span className="sales-mobile-value">{row.packageName} — {formatCurrency(row.price)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="data-table-wrap sales-breakdown-table-wrap">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Customer name</th>
+                                  <th>Package name</th>
+                                  <th className="num">Price</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredBreakdown.map((row, i) => (
+                                  <tr key={`${row.customerName}-${row.packageName}-${i}`}>
+                                    <td>{row.customerName}</td>
+                                    <td>{row.packageName}</td>
+                                    <td className="num">{formatCurrency(row.price)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
                     {(detailData?.breakdownTotal ?? 0) > 0 && !packageId && (
                       <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                         <span className="text-muted">
@@ -672,6 +761,7 @@ export default function SalesPage() {
                     )}
                   </>
                 )}
+              </div>
               </div>
             )}
           </>

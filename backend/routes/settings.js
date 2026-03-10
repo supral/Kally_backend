@@ -6,22 +6,43 @@ const router = express.Router();
 
 router.use(protect);
 
-/** GET /api/settings - get system settings (admin only) */
+/** GET /api/settings - get system settings. Admin gets full settings; vendor gets only showGuidelinesInVendorDashboard. */
 router.get('/', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin only.' });
-    }
     let doc = await Settings.findOne().lean();
     if (!doc) {
       doc = await Settings.create({});
       doc = doc.toObject();
     }
+    if (req.user.role === 'admin') {
+      return res.json({
+        success: true,
+        settings: {
+          revenuePercentage: doc.revenuePercentage ?? 10,
+          settlementPercentage: doc.settlementPercentage ?? 100,
+          showGuidelinesInVendorDashboard: doc.showGuidelinesInVendorDashboard !== false,
+          showNotificationBellToVendors: doc.showNotificationBellToVendors !== false,
+          showNotificationAppointments: doc.showNotificationAppointments !== false,
+          showNotificationSettlements: doc.showNotificationSettlements !== false,
+          showNotificationTickets: doc.showNotificationTickets !== false,
+          showNotificationComments: doc.showNotificationComments !== false,
+          showNotificationSalesData: doc.showNotificationSalesData !== false,
+          showImportButton: doc.showImportButton !== false,
+        },
+      });
+    }
+    // Vendor/branch: only return fields they are allowed to see (sidebar + notification bell + import)
     res.json({
       success: true,
       settings: {
-        revenuePercentage: doc.revenuePercentage ?? 10,
-        settlementPercentage: doc.settlementPercentage ?? 100,
+        showGuidelinesInVendorDashboard: doc.showGuidelinesInVendorDashboard !== false,
+        showNotificationBellToVendors: doc.showNotificationBellToVendors !== false,
+        showNotificationAppointments: doc.showNotificationAppointments !== false,
+        showNotificationSettlements: doc.showNotificationSettlements !== false,
+        showNotificationTickets: doc.showNotificationTickets !== false,
+        showNotificationComments: doc.showNotificationComments !== false,
+        showNotificationSalesData: doc.showNotificationSalesData !== false,
+        showImportButton: doc.showImportButton !== false,
       },
     });
   } catch (err) {
@@ -35,7 +56,18 @@ router.patch('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Admin only.' });
     }
-    const { revenuePercentage, settlementPercentage } = req.body;
+    const {
+      revenuePercentage,
+      settlementPercentage,
+      showGuidelinesInVendorDashboard,
+      showNotificationBellToVendors,
+      showNotificationAppointments,
+      showNotificationSettlements,
+      showNotificationTickets,
+      showNotificationComments,
+      showNotificationSalesData,
+      showImportButton,
+    } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
       update.revenuePercentage = revenuePercentage;
@@ -49,6 +81,30 @@ router.patch('/', async (req, res) => {
       const n = parseFloat(settlementPercentage);
       if (!Number.isNaN(n) && n >= 0 && n <= 100) update.settlementPercentage = n;
     }
+    if (typeof showGuidelinesInVendorDashboard === 'boolean') {
+      update.showGuidelinesInVendorDashboard = showGuidelinesInVendorDashboard;
+    }
+    if (typeof showNotificationBellToVendors === 'boolean') {
+      update.showNotificationBellToVendors = showNotificationBellToVendors;
+    }
+    if (typeof showNotificationAppointments === 'boolean') {
+      update.showNotificationAppointments = showNotificationAppointments;
+    }
+    if (typeof showNotificationSettlements === 'boolean') {
+      update.showNotificationSettlements = showNotificationSettlements;
+    }
+    if (typeof showNotificationTickets === 'boolean') {
+      update.showNotificationTickets = showNotificationTickets;
+    }
+    if (typeof showNotificationComments === 'boolean') {
+      update.showNotificationComments = showNotificationComments;
+    }
+    if (typeof showNotificationSalesData === 'boolean') {
+      update.showNotificationSalesData = showNotificationSalesData;
+    }
+    if (typeof showImportButton === 'boolean') {
+      update.showImportButton = showImportButton;
+    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
@@ -59,6 +115,14 @@ router.patch('/', async (req, res) => {
       settings: {
         revenuePercentage: doc.revenuePercentage ?? 10,
         settlementPercentage: doc.settlementPercentage ?? 100,
+        showGuidelinesInVendorDashboard: doc.showGuidelinesInVendorDashboard !== false,
+        showNotificationBellToVendors: doc.showNotificationBellToVendors !== false,
+        showNotificationAppointments: doc.showNotificationAppointments !== false,
+        showNotificationSettlements: doc.showNotificationSettlements !== false,
+        showNotificationTickets: doc.showNotificationTickets !== false,
+        showNotificationComments: doc.showNotificationComments !== false,
+        showNotificationSalesData: doc.showNotificationSalesData !== false,
+        showImportButton: doc.showImportButton !== false,
       },
     });
   } catch (err) {

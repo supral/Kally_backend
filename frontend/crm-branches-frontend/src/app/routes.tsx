@@ -6,14 +6,21 @@ import { DashboardLayout } from '../layouts/DashboardLayout';
 import { VendorApprovalGuard } from '../auth/components/VendorApprovalGuard';
 import { AuthLayout } from '../auth/components/AuthLayout';
 import { PageLoader } from '../components/ui/PageLoader';
+import { ChunkErrorFallback } from '../components/ui/ChunkErrorFallback';
 import { ROUTES } from '../config/constants';
+
+function lazyWithChunkError(importFn: () => Promise<{ default: React.ComponentType }>) {
+  return lazy(() =>
+    importFn().catch(() => ({ default: ChunkErrorFallback }))
+  );
+}
 
 // Auth pages – lazy loaded
 const LoginPage = lazy(() => import('../auth/pages/LoginPage').then((m) => ({ default: m.default })));
 const ForgotPasswordPage = lazy(() => import('../auth/pages/ForgotPasswordPage').then((m) => ({ default: m.default })));
 
 // Admin pages – lazy loaded
-const AdminDashboardPage = lazy(() => import('../pages/admin/AdminDashboardPage').then((m) => ({ default: m.default })));
+const AdminDashboardPage = lazyWithChunkError(() => import('../features/dashboard/pages/AdminDashboardPage').then((m) => ({ default: m.default })));
 const AdminVendorsPage = lazy(() => import('../pages/admin/VendorsPage').then((m) => ({ default: m.default })));
 const AdminCreateVendorPage = lazy(() => import('../pages/admin/CreateVendorPage').then((m) => ({ default: m.default })));
 const AdminBranchesPage = lazy(() => import('../pages/admin/BranchesPage').then((m) => ({ default: m.default })));
@@ -37,6 +44,7 @@ const AdminSettingsPage = lazy(() => import('../pages/admin/SettingsPage').then(
 const AdminProfilePage = lazy(() => import('../pages/admin/ProfilePage').then((m) => ({ default: m.default })));
 const AdminTicketsPage = lazy(() => import('../pages/admin/TicketsPage').then((m) => ({ default: m.default })));
 const AdminTicketDetailPage = lazy(() => import('../pages/admin/TicketDetailPage').then((m) => ({ default: m.default })));
+const LazyGuidelinesPage = lazy(() => import('../pages/GuidelinesPage').then((m) => ({ default: m.default })));
 
 // Vendor pages – lazy loaded
 const VendorDashboardPage = lazy(() => import('../pages/vendor/VendorDashboardPage').then((m) => ({ default: m.default })));
@@ -101,6 +109,7 @@ export function AppRoutes() {
           <Route path="settlements" element={<AdminSettlementsPage />} />
           <Route path="loyalty" element={<AdminLoyaltyPage />} />
           <Route path="loyalty/:id" element={<AdminLoyaltyDetailPage />} />
+          <Route path="guidelines" element={<LazyGuidelinesPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />
           <Route path="profile" element={<AdminProfilePage />} />
           <Route path="tickets" element={<AdminTicketsPage />} />
@@ -136,6 +145,7 @@ export function AppRoutes() {
             <Route path="loyalty" element={<VendorLoyaltyPage />} />
             <Route path="loyalty/:id" element={<VendorLoyaltyDetailPage />} />
             <Route path="profile" element={<VendorProfilePage />} />
+            <Route path="guidelines" element={<LazyGuidelinesPage />} />
             <Route path="tickets" element={<VendorTicketsPage />} />
             <Route path="tickets/:id" element={<VendorTicketDetailPage />} />
           </Route>
