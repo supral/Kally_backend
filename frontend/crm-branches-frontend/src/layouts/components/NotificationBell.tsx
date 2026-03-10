@@ -176,12 +176,6 @@ export function NotificationBell() {
     }
   }, [open]);
 
-  const rawCount =
-    (showAppointments ? appointments.length : 0) +
-    (showSettlements ? pendingSettlementsCount : 0) +
-    (showTickets ? openTicketsCount : 0) +
-    (showComments ? ticketsWithRepliesCount : 0) +
-    (showSalesData && salesImagesCount > 0 ? 1 : 0);
   const unseenAppointments = showAppointments ? Math.max(0, appointments.length - seenAppointments) : 0;
   const unseenSettlements = showSettlements ? Math.max(0, pendingSettlementsCount - seenSettlements) : 0;
   const unseenTickets = showTickets ? Math.max(0, openTicketsCount - seenTickets) : 0;
