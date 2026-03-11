@@ -4,6 +4,9 @@ const Branch = require('../models/Branch');
 const Appointment = require('../models/Appointment');
 const Membership = require('../models/Membership');
 const MembershipUsage = require('../models/MembershipUsage');
+const LoyaltyAccount = require('../models/LoyaltyAccount');
+const LoyaltyTransaction = require('../models/LoyaltyTransaction');
+const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 
 /** Generate next card ID for a branch: prefix (first 3 letters of branch name) + 5-digit sequence, e.g. tes-00001 */
@@ -32,6 +35,103 @@ const router = express.Router();
 
 router.use(protect);
 
+/**
+ * POST /api/customers/bulk-delete
+ * Admin-only: deletes selected customers + related documents (appointments + loyalty).
+ * Skips customers that have memberships.
+ */
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+
+    const settingsDoc = await Settings.findOne().lean();
+    const allowed = settingsDoc?.showCustomerDeleteToAdmin !== false;
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'Customer delete is disabled in Settings.' });
+    }
+
+    const { ids, confirm } = req.body || {};
+    if (confirm !== 'DELETE_SELECTED_CUSTOMERS') {
+      return res.status(400).json({ success: false, message: 'Confirmation required.' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'ids[] is required.' });
+    }
+    if (ids.length > 5000) {
+      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
+    }
+
+    const membershipCustomerIds = await Membership.distinct('customerId', { customerId: { $in: ids } });
+    const blockedSet = new Set(membershipCustomerIds.map((x) => String(x)));
+    const deletableIds = ids.filter((id) => !blockedSet.has(String(id)));
+
+    const [appointments, loyaltyAccounts, loyaltyTxns, customers] = await Promise.all([
+      Appointment.deleteMany({ customerId: { $in: deletableIds } }),
+      LoyaltyAccount.deleteMany({ customerId: { $in: deletableIds } }),
+      LoyaltyTransaction.deleteMany({ customerId: { $in: deletableIds } }),
+      Customer.deleteMany({ _id: { $in: deletableIds } }),
+    ]);
+
+    return res.json({
+      success: true,
+      deleted: {
+        customers: customers.deletedCount ?? 0,
+        appointments: appointments.deletedCount ?? 0,
+        loyaltyAccounts: loyaltyAccounts.deletedCount ?? 0,
+        loyaltyTransactions: loyaltyTxns.deletedCount ?? 0,
+      },
+      skippedWithMemberships: Array.from(blockedSet),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to bulk delete customers.' });
+  }
+});
+
+/**
+ * POST /api/customers/purge-all
+ * Admin-only: deletes ALL customer data (customers + related documents).
+ * Guarded by a Settings toggle and a confirm string in the request body.
+ */
+router.post('/purge-all', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+
+    const settingsDoc = await Settings.findOne().lean();
+    const allowed = settingsDoc?.showDeleteAllCustomersButtonToAdmin === true;
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'Delete-all is disabled in Settings.' });
+    }
+
+    const { confirm } = req.body || {};
+    if (confirm !== 'DELETE_ALL_CUSTOMERS') {
+      return res.status(400).json({ success: false, message: 'Confirmation required.' });
+    }
+
+    const [appointments, memberships, usages, loyaltyAccounts, loyaltyTxns, customers] = await Promise.all([
+      Appointment.deleteMany({}),
+      Membership.deleteMany({}),
+      MembershipUsage.deleteMany({}),
+      LoyaltyAccount.deleteMany({}),
+      LoyaltyTransaction.deleteMany({}),
+      Customer.deleteMany({}),
+    ]);
+
+    return res.json({
+      success: true,
+      deleted: {
+        appointments: appointments.deletedCount ?? 0,
+        memberships: memberships.deletedCount ?? 0,
+        membershipUsages: usages.deletedCount ?? 0,
+        loyaltyAccounts: loyaltyAccounts.deletedCount ?? 0,
+        loyaltyTransactions: loyaltyTxns.deletedCount ?? 0,
+        customers: customers.deletedCount ?? 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to purge customers.' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const forDropdown = req.query.forDropdown === '1' || req.query.forDropdown === 'true';
@@ -42,7 +142,9 @@ router.get('/', async (req, res) => {
     }
     // Universal customers: all branches see all customers. Admin can optionally filter by primary branch for reporting.
     const limitParam = req.query.limit;
-    const limit = limitParam ? Math.min(1000, Math.max(1, parseInt(limitParam, 10))) : 500;
+    // Default was 500, which made the UI look like it "can't add more than 500 customers" because lists/dropdowns
+    // would never fetch beyond the first 500. We allow larger lists; UI should still prefer search for performance.
+    const limit = limitParam ? Math.min(10000, Math.max(1, parseInt(limitParam, 10))) : 10000;
     const customers = await Customer.find(filter).populate('primaryBranchId', 'name').sort({ name: 1 }).limit(limit).lean();
     res.json({
       success: true,

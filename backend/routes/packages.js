@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const Package = require('../models/Package');
+const Settings = require('../models/Settings');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -38,6 +39,34 @@ const listPackages = async (req, res) => {
 };
 router.get('/', listPackages);
 router.get('', listPackages);
+
+/**
+ * POST /api/packages/bulk-delete
+ * Admin-only: deactivate packages in bulk (sets isActive=false).
+ * Guarded by a Settings toggle.
+ */
+router.post('/bulk-delete', authorize('admin'), async (req, res) => {
+  try {
+    const settingsDoc = await Settings.findOne().lean();
+    if (settingsDoc?.showBulkDeletePackagesToAdmin !== true) {
+      return res.status(403).json({ success: false, message: 'Bulk delete is disabled in Settings.' });
+    }
+    const { ids, confirm } = req.body || {};
+    if (confirm !== 'DELETE_SELECTED_PACKAGES') {
+      return res.status(400).json({ success: false, message: 'Confirmation required.' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'ids[] is required.' });
+    }
+    if (ids.length > 5000) {
+      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
+    }
+    const r = await Package.updateMany({ _id: { $in: ids } }, { $set: { isActive: false } });
+    return res.json({ success: true, deactivated: r.modifiedCount ?? 0 });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to bulk delete packages.' });
+  }
+});
 
 function computeSettlementAmount(price, discountAmount, totalSessions) {
   if (!totalSessions || totalSessions <= 0) return undefined;

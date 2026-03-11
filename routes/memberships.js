@@ -23,6 +23,45 @@ const router = express.Router();
 
 router.use(protect);
 
+/**
+ * POST /api/memberships/bulk-delete
+ * Admin-only: delete memberships in bulk and also delete associated membership usages and internal settlements.
+ * Guarded by a Settings toggle.
+ */
+router.post('/bulk-delete', authorize('admin'), async (req, res) => {
+  try {
+    const settingsDoc = await Settings.findOne().lean();
+    if (settingsDoc?.showBulkDeleteMembershipsToAdmin !== true) {
+      return res.status(403).json({ success: false, message: 'Bulk delete is disabled in Settings.' });
+    }
+    const { ids, confirm } = req.body || {};
+    if (confirm !== 'DELETE_SELECTED_MEMBERSHIPS') {
+      return res.status(400).json({ success: false, message: 'Confirmation required.' });
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'ids[] is required.' });
+    }
+    if (ids.length > 5000) {
+      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
+    }
+    const [usages, settlements, memberships] = await Promise.all([
+      MembershipUsage.deleteMany({ membershipId: { $in: ids } }),
+      InternalSettlement.deleteMany({ membershipId: { $in: ids } }),
+      Membership.deleteMany({ _id: { $in: ids } }),
+    ]);
+    return res.json({
+      success: true,
+      deleted: {
+        memberships: memberships.deletedCount ?? 0,
+        membershipUsages: usages.deletedCount ?? 0,
+        internalSettlements: settlements.deletedCount ?? 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to bulk delete memberships.' });
+  }
+});
+
 const DEFAULT_MEMBERSHIPS_LIMIT = 1000;
 const MAX_MEMBERSHIPS_LIMIT = 2000;
 

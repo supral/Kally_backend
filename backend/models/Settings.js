@@ -31,6 +31,17 @@ const settingsSchema = new mongoose.Schema(
     showNotificationTickets: { type: Boolean, default: true },
     showNotificationComments: { type: Boolean, default: true },
     showNotificationSalesData: { type: Boolean, default: true },
+    /** When true, admins see the notification bell in the top bar. */
+    showNotificationBellToAdmins: {
+      type: Boolean,
+      default: true,
+    },
+    /** Which categories to show in the admin notification dropdown (admin-controlled). */
+    showAdminNotificationAppointments: { type: Boolean, default: true },
+    showAdminNotificationSettlements: { type: Boolean, default: true },
+    showAdminNotificationTickets: { type: Boolean, default: true },
+    showAdminNotificationComments: { type: Boolean, default: true },
+    showAdminNotificationSalesData: { type: Boolean, default: true },
     /** When true, Import buttons (branches, packages, customers, memberships, appointments) are visible. */
     showImportButton: {
       type: Boolean,
@@ -47,6 +58,16 @@ const settingsSchema = new mongoose.Schema(
     showCustomerDeleteToVendor: { type: Boolean, default: true },
     /** When true, Staff sees the delete button on the Customers page. */
     showCustomerDeleteToStaff: { type: Boolean, default: true },
+    /** When true, Admin sees the "Delete all customers" button (dangerous). */
+    showDeleteAllCustomersButtonToAdmin: { type: Boolean, default: false },
+    /** When true, Admin sees the "Reset all data" button (dangerous). */
+    showResetAllDataButtonToAdmin: { type: Boolean, default: false },
+    /** When true, Admin sees bulk delete controls on Branches page. */
+    showBulkDeleteBranchesToAdmin: { type: Boolean, default: false },
+    /** When true, Admin sees bulk delete controls on Packages page. */
+    showBulkDeletePackagesToAdmin: { type: Boolean, default: false },
+    /** When true, Admin sees bulk delete controls on Memberships page. */
+    showBulkDeleteMembershipsToAdmin: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
