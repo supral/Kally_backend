@@ -125,6 +125,7 @@ router.get('/', async (req, res) => {
           showBulkDeleteBranchesToAdmin: doc.showBulkDeleteBranchesToAdmin === true,
           showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
           showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
+          showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
         },
       });
     }
@@ -148,6 +149,7 @@ router.get('/', async (req, res) => {
         showBulkDeleteBranchesToAdmin: doc.showBulkDeleteBranchesToAdmin === true,
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
+        showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
       },
     });
   } catch (err) {
@@ -186,6 +188,7 @@ router.patch('/', async (req, res) => {
       showBulkDeleteBranchesToAdmin,
       showBulkDeletePackagesToAdmin,
       showBulkDeleteMembershipsToAdmin,
+      showBulkSettleSettlementsToAdmin,
     } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
@@ -266,6 +269,9 @@ router.patch('/', async (req, res) => {
     if (typeof showBulkDeleteMembershipsToAdmin === 'boolean') {
       update.showBulkDeleteMembershipsToAdmin = showBulkDeleteMembershipsToAdmin;
     }
+    if (typeof showBulkSettleSettlementsToAdmin === 'boolean') {
+      update.showBulkSettleSettlementsToAdmin = showBulkSettleSettlementsToAdmin;
+    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
@@ -298,6 +304,7 @@ router.patch('/', async (req, res) => {
         showBulkDeleteBranchesToAdmin: doc.showBulkDeleteBranchesToAdmin === true,
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
+        showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
       },
     });
   } catch (err) {

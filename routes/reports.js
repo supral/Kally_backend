@@ -15,6 +15,37 @@ const { getBranchId } = require('../middleware/branchFilter');
 const router = express.Router();
 
 router.use(protect);
+/** PATCH /api/reports/settlements/bulk-settle - mark multiple settlements as settled */
+router.patch('/settlements/bulk-settle', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin only.' });
+    }
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No settlement IDs provided.' });
+    }
+    const objectIds = ids
+      .map((id) => {
+        try {
+          return new mongoose.Types.ObjectId(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    if (objectIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid settlement IDs provided.' });
+    }
+    const result = await InternalSettlement.updateMany(
+      { _id: { $in: objectIds }, status: { $ne: 'settled' } },
+      { $set: { status: 'settled' } }
+    );
+    return res.json({ success: true, updated: result.modifiedCount ?? 0 });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to mark settlements as settled.' });
+  }
+});
 
 /** GET /api/reports/branch-dashboard - vendor branch dashboard (from/to, KPIs, today appointments, leads to follow up) */
 router.get('/branch-dashboard', async (req, res) => {

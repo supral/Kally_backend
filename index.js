@@ -18,6 +18,7 @@ const leadStatusRoutes = require('./routes/leadStatuses');
 const appointmentRoutes = require('./routes/appointments');
 const reportRoutes = require('./routes/reports');
 const settingsRoutes = require('./routes/settings');
+const guidelinesRoutes = require('./routes/guidelines');
 const loyaltyRoutes = require('./routes/loyalty');
 const packageRoutes = require('./routes/packages');
 const salesImageRoutes = require('./routes/salesImages');
@@ -68,6 +69,7 @@ app.use('/api/packages', packageRoutes);
 app.use('/api/sales-images', salesImageRoutes);
 app.use('/api/manual-sales', manualSalesRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/guidelines', guidelinesRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });

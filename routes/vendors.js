@@ -18,9 +18,9 @@ router.get('/', async (req, res) => {
     }
     const limit = limitParam ? Math.min(MAX_VENDORS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : MAX_VENDORS_LIMIT;
     const vendors = await User.find(filter)
-      .select('name email vendorName approvalStatus branchId isActive createdAt')
+      .select('name email vendorName approvalStatus branchId isActive createdAt updatedAt')
       .populate('branchId', 'name code')
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(limit)
       .lean();
     res.json({
@@ -35,6 +35,7 @@ router.get('/', async (req, res) => {
         branchName: v.branchId?.name,
         isActive: v.isActive !== false,
         createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
       })),
     });
   } catch (err) {

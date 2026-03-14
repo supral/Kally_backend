@@ -65,6 +65,8 @@ const settingsSchema = new mongoose.Schema(
     showBulkDeletePackagesToAdmin: { type: Boolean, default: false },
     /** When true, Admin sees bulk delete controls on Memberships page. */
     showBulkDeleteMembershipsToAdmin: { type: Boolean, default: false },
+    /** When true, Admin sees bulk select + mark settled controls on Settlements page. */
+    showBulkSettleSettlementsToAdmin: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
