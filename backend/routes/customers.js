@@ -144,7 +144,8 @@ router.get('/', async (req, res) => {
     const limitParam = req.query.limit;
     // Default was 500, which made the UI look like it "can't add more than 500 customers" because lists/dropdowns
     // would never fetch beyond the first 500. We allow larger lists; UI should still prefer search for performance.
-    const limit = limitParam ? Math.min(10000, Math.max(1, parseInt(limitParam, 10))) : 10000;
+    // For large imports, we allow up to 50k; default is 20k so big accounts can see most/all customers.
+    const limit = limitParam ? Math.min(50000, Math.max(1, parseInt(limitParam, 10))) : 20000;
     const customers = await Customer.find(filter).populate('primaryBranchId', 'name').sort({ name: 1 }).limit(limit).lean();
     res.json({
       success: true,

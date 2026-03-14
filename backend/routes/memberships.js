@@ -62,8 +62,10 @@ router.post('/bulk-delete', authorize('admin'), async (req, res) => {
   }
 });
 
-const DEFAULT_MEMBERSHIPS_LIMIT = 1000;
-const MAX_MEMBERSHIPS_LIMIT = 2000;
+// Allow larger membership lists for big imports/reports.
+// Default fetches up to 40k; callers can request up to 60k via ?limit=.
+const DEFAULT_MEMBERSHIPS_LIMIT = 40000;
+const MAX_MEMBERSHIPS_LIMIT = 60000;
 
 router.get('/', async (req, res) => {
   try {
@@ -72,7 +74,9 @@ router.get('/', async (req, res) => {
     // Universal: all branches see all memberships (so any branch can do credit redeem). Admin can filter by sold-at branch for reporting.
     if (req.user.role === 'admin' && branchId) filter.soldAtBranchId = branchId;
     if (customerId) filter.customerId = customerId;
+    // By default, hide fully used memberships from the list, but allow explicit status filter to override.
     if (status) filter.status = status;
+    else filter.status = { $ne: 'used' };
     if (dateFrom || dateTo) {
       filter.purchaseDate = {};
       if (dateFrom) filter.purchaseDate.$gte = new Date(dateFrom);
