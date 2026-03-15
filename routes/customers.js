@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Customer = require('../models/Customer');
 const Branch = require('../models/Branch');
 const Appointment = require('../models/Appointment');
@@ -8,6 +9,8 @@ const LoyaltyAccount = require('../models/LoyaltyAccount');
 const LoyaltyTransaction = require('../models/LoyaltyTransaction');
 const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
+const { createActivityLog } = require('../utils/activityLog');
+const { validateBulkIds } = require('../utils/validateBulkIds');
 
 /** Generate next card ID for a branch: prefix (first 3 letters of branch name) + 5-digit sequence, e.g. tes-00001 */
 async function generateCardId(primaryBranchId) {
@@ -54,16 +57,12 @@ router.post('/bulk-delete', async (req, res) => {
     if (confirm !== 'DELETE_SELECTED_CUSTOMERS') {
       return res.status(400).json({ success: false, message: 'Confirmation required.' });
     }
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: 'ids[] is required.' });
-    }
-    if (ids.length > 5000) {
-      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
-    }
+    const { valid, ids: objectIds, message } = validateBulkIds(ids);
+    if (!valid) return res.status(400).json({ success: false, message: message || 'Invalid ids.' });
 
-    const membershipCustomerIds = await Membership.distinct('customerId', { customerId: { $in: ids } });
+    const membershipCustomerIds = await Membership.distinct('customerId', { customerId: { $in: objectIds } });
     const blockedSet = new Set(membershipCustomerIds.map((x) => String(x)));
-    const deletableIds = ids.filter((id) => !blockedSet.has(String(id)));
+    const deletableIds = objectIds.filter((id) => !blockedSet.has(id.toString()));
 
     const [appointments, loyaltyAccounts, loyaltyTxns, customers] = await Promise.all([
       Appointment.deleteMany({ customerId: { $in: deletableIds } }),
@@ -72,10 +71,19 @@ router.post('/bulk-delete', async (req, res) => {
       Customer.deleteMany({ _id: { $in: deletableIds } }),
     ]);
 
+    const customerCount = customers.deletedCount ?? 0;
+    if (customerCount > 0) {
+      createActivityLog({
+        userId: req.user._id,
+        description: `Bulk deleted ${customerCount} customer(s)`,
+        entity: 'customer',
+        details: { count: customerCount },
+      }).catch(() => {});
+    }
     return res.json({
       success: true,
       deleted: {
-        customers: customers.deletedCount ?? 0,
+        customers: customerCount,
         appointments: appointments.deletedCount ?? 0,
         loyaltyAccounts: loyaltyAccounts.deletedCount ?? 0,
         loyaltyTransactions: loyaltyTxns.deletedCount ?? 0,
@@ -188,6 +196,14 @@ router.post('/', async (req, res) => {
       notes: notes || undefined,
     });
     const c = await Customer.findById(customer._id).populate('primaryBranchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: c.primaryBranchId?._id || c.primaryBranchId,
+      description: `Created customer: ${c.name}`,
+      entity: 'customer',
+      entityId: customer._id,
+      details: { phone: c.phone, primaryBranch: c.primaryBranchId?.name },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       customer: {
@@ -209,6 +225,9 @@ router.post('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer id.' });
+    }
     const customer = await Customer.findById(req.params.id).populate('primaryBranchId', 'name').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
     // Universal: any branch can view any customer
@@ -236,6 +255,9 @@ router.get('/:id', async (req, res) => {
 
 router.get('/:id/visit-history', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer id.' });
+    }
     const customer = await Customer.findById(req.params.id).select('primaryBranchId createdBy').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
     // Universal: any branch can view visit history
@@ -290,16 +312,39 @@ router.get('/:id/visit-history', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer id.' });
+    }
     const existing = await Customer.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ success: false, message: 'Customer not found.' });
-    // Universal: any branch can update any customer
-    const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, {
+    // Allowlist fields to prevent mass assignment (e.g. createdBy, membershipCardId)
+    const allowed = ['name', 'phone', 'email', 'customerPackage', 'customerPackagePrice', 'customerPackageExpiry', 'notes'];
+    const updates = {};
+    allowed.forEach((key) => {
+      if (req.body[key] !== undefined) {
+        if (key === 'customerPackagePrice' && (req.body[key] === '' || req.body[key] == null)) updates[key] = undefined;
+        else if (key === 'customerPackageExpiry') updates[key] = req.body[key] ? new Date(req.body[key]) : undefined;
+        else updates[key] = req.body[key];
+      }
+    });
+    if (req.user.role === 'admin' && req.body.primaryBranchId !== undefined) {
+      updates.primaryBranchId = req.body.primaryBranchId || null;
+    }
+    const customer = await Customer.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
     })
       .populate('primaryBranchId', 'name')
       .lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
+    createActivityLog({
+      userId: req.user._id,
+      branchId: customer.primaryBranchId?._id || customer.primaryBranchId,
+      description: `Updated customer: ${customer.name}`,
+      entity: 'customer',
+      entityId: customer._id,
+      details: { phone: customer.phone, primaryBranch: customer.primaryBranchId?.name },
+    }).catch(() => {});
     res.json({
       success: true,
       customer: {

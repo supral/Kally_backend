@@ -126,6 +126,7 @@ router.get('/', async (req, res) => {
           showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
           showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
           showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+          showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
         },
       });
     }
@@ -150,6 +151,7 @@ router.get('/', async (req, res) => {
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+        showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
       },
     });
   } catch (err) {
@@ -189,6 +191,7 @@ router.patch('/', async (req, res) => {
       showBulkDeletePackagesToAdmin,
       showBulkDeleteMembershipsToAdmin,
       showBulkSettleSettlementsToAdmin,
+      showPackageActionsToVendor,
     } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
@@ -272,6 +275,9 @@ router.patch('/', async (req, res) => {
     if (typeof showBulkSettleSettlementsToAdmin === 'boolean') {
       update.showBulkSettleSettlementsToAdmin = showBulkSettleSettlementsToAdmin;
     }
+    if (typeof showPackageActionsToVendor === 'boolean') {
+      update.showPackageActionsToVendor = showPackageActionsToVendor;
+    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
@@ -305,6 +311,7 @@ router.patch('/', async (req, res) => {
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+        showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
       },
     });
   } catch (err) {

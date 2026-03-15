@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const Package = require('../models/Package');
 const Settings = require('../models/Settings');
 const { protect, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('../utils/activityLog');
+const { validateBulkIds } = require('../utils/validateBulkIds');
 
 const router = express.Router();
 router.use(protect);
@@ -55,14 +57,19 @@ router.post('/bulk-delete', authorize('admin'), async (req, res) => {
     if (confirm !== 'DELETE_SELECTED_PACKAGES') {
       return res.status(400).json({ success: false, message: 'Confirmation required.' });
     }
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: 'ids[] is required.' });
+    const { valid, ids: objectIds, message } = validateBulkIds(ids);
+    if (!valid) return res.status(400).json({ success: false, message: message || 'Invalid ids.' });
+    const r = await Package.updateMany({ _id: { $in: objectIds } }, { $set: { isActive: false } });
+    const count = r.modifiedCount ?? 0;
+    if (count > 0) {
+      createActivityLog({
+        userId: req.user._id,
+        description: `Bulk deactivated ${count} package(s)`,
+        entity: 'package',
+        details: { count },
+      }).catch(() => {});
     }
-    if (ids.length > 5000) {
-      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
-    }
-    const r = await Package.updateMany({ _id: { $in: ids } }, { $set: { isActive: false } });
-    return res.json({ success: true, deactivated: r.modifiedCount ?? 0 });
+    return res.json({ success: true, deactivated: count });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message || 'Failed to bulk delete packages.' });
   }
@@ -102,6 +109,13 @@ router.post('/', authorize('admin', 'vendor'), async (req, res) => {
       totalSessions: numSessions,
       settlementAmount: settlementAmount != null && !isNaN(settlementAmount) && settlementAmount >= 0 ? settlementAmount : undefined,
     });
+    createActivityLog({
+      userId: req.user._id,
+      description: `Created package: ${pkg.name}`,
+      entity: 'package',
+      entityId: pkg._id,
+      details: { price: pkg.price, totalSessions: pkg.totalSessions },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       package: { id: pkg._id, name: pkg.name, price: pkg.price, discountAmount: pkg.discountAmount, totalSessions: pkg.totalSessions, settlementAmount: pkg.settlementAmount },
@@ -137,6 +151,13 @@ router.patch('/:id', authorize('admin'), async (req, res) => {
     if (isActive !== undefined) pkg.isActive = !!isActive;
     pkg.settlementAmount = computeSettlementAmount(pkg.price, pkg.discountAmount, pkg.totalSessions);
     await pkg.save();
+    createActivityLog({
+      userId: req.user._id,
+      description: `Updated package: ${pkg.name}`,
+      entity: 'package',
+      entityId: pkg._id,
+      details: { price: pkg.price, isActive: pkg.isActive },
+    }).catch(() => {});
     res.json({
       success: true,
       package: { id: pkg._id, name: pkg.name, price: pkg.price, discountAmount: pkg.discountAmount, totalSessions: pkg.totalSessions, settlementAmount: pkg.settlementAmount, isActive: pkg.isActive },
@@ -155,6 +176,13 @@ router.delete('/:id', authorize('admin'), async (req, res) => {
     }
     const pkg = await Package.findByIdAndUpdate(id, { isActive: false }, { new: true });
     if (!pkg) return res.status(404).json({ success: false, message: 'Package not found.' });
+    createActivityLog({
+      userId: req.user._id,
+      description: `Deleted package: ${pkg.name}`,
+      entity: 'package',
+      entityId: pkg._id,
+      details: {},
+    }).catch(() => {});
     res.json({ success: true, message: 'Package removed.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to delete package.' });

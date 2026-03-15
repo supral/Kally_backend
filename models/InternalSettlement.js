@@ -13,5 +13,6 @@ const settlementSchema = new mongoose.Schema(
 );
 
 settlementSchema.index({ fromBranchId: 1, toBranchId: 1 });
+settlementSchema.index({ status: 1 });
 
 module.exports = mongoose.model('InternalSettlement', settlementSchema);

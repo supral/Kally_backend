@@ -2,6 +2,8 @@ const express = require('express');
 const Appointment = require('../models/Appointment');
 const { protect } = require('../middleware/auth');
 const { getBranchId, branchFilter } = require('../middleware/branchFilter');
+const { validateObjectId } = require('../middleware/validateObjectId');
+const { createActivityLog } = require('../utils/activityLog');
 
 const router = express.Router();
 
@@ -76,6 +78,14 @@ router.post('/', async (req, res) => {
       .populate('serviceId', 'name')
       .lean();
 
+    createActivityLog({
+      userId: req.user._id,
+      branchId: a.branchId?._id || a.branchId,
+      description: 'Created appointment',
+      entity: 'appointment',
+      entityId: appointment._id,
+      details: { customerName: a.customerId?.name, branch: a.branchId?.name, scheduledAt: a.scheduledAt },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       appointment: {
@@ -91,7 +101,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', validateObjectId('id'), async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Only admins can update appointment status.' });
@@ -115,6 +125,14 @@ router.patch('/:id', async (req, res) => {
       .populate('branchId', 'name')
       .lean();
 
+    createActivityLog({
+      userId: req.user._id,
+      branchId: a.branchId?._id || a.branchId,
+      description: `Updated appointment status: ${a.status}`,
+      entity: 'appointment',
+      entityId: appointment._id,
+      details: { customerName: a.customerId?.name, branch: a.branchId?.name, status: a.status },
+    }).catch(() => {});
     res.json({
       success: true,
       appointment: {

@@ -2,10 +2,9 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const isProd = process.env.NODE_ENV === 'production';
     const options = {
       bufferCommands: false,
-      ...(isProd && { maxPoolSize: 10 }),
+      maxPoolSize: 10,
     };
     const conn = await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mbm', options);
     console.log(`MongoDB connected: ${conn.connection.host}`);

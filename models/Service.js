@@ -12,4 +12,7 @@ const serviceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+serviceSchema.index({ isActive: 1, name: 1 });
+serviceSchema.index({ branchId: 1, name: 1 });
+
 module.exports = mongoose.model('Service', serviceSchema);

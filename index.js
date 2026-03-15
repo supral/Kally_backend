@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('mongo-sanitize');
 const morgan = require('morgan');
 const compression = require('compression');
 const connectDB = require('./config/db');
@@ -24,12 +26,20 @@ const packageRoutes = require('./routes/packages');
 const salesImageRoutes = require('./routes/salesImages');
 const manualSalesRoutes = require('./routes/manualSales');
 const ticketRoutes = require('./routes/tickets');
+const activityLogRoutes = require('./routes/activityLog');
 
 connectDB();
 
 const app = express();
-// Allow API to be used from a different origin (deployed frontend); avoids ERR_BLOCKED_BY_RESPONSE
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.disable('x-powered-by');
+// Security headers: HSTS in production, cross-origin for API
+const helmetOptions = {
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  ...(process.env.NODE_ENV === 'production' && {
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  }),
+};
+app.use(helmet(helmetOptions));
 
 // CORS: allow localhost, and in production any origins listed in FRONTEND_URL (comma-separated)
 const allowedOrigins = process.env.FRONTEND_URL
@@ -51,7 +61,34 @@ if (process.env.NODE_ENV !== 'production') {
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
-app.use('/api/auth', authRoutes);
+// Strip $ and . from request data to prevent NoSQL operator injection
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') req.body = mongoSanitize(req.body);
+  if (req.query && typeof req.query === 'object') req.query = mongoSanitize(req.query);
+  if (req.params && typeof req.params === 'object') req.params = mongoSanitize(req.params);
+  next();
+});
+
+// Global API rate limit: reduce impact of DoS and scraping (exclude health for monitoring)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { success: false, message: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/api/health',
+});
+app.use('/api', apiLimiter);
+
+// Stricter rate limit on auth to mitigate brute-force (login/register)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { success: false, message: 'Too many login attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/customers', customerRoutes);
@@ -69,6 +106,7 @@ app.use('/api/packages', packageRoutes);
 app.use('/api/sales-images', salesImageRoutes);
 app.use('/api/manual-sales', manualSalesRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/activity-log', activityLogRoutes);
 app.use('/api/guidelines', guidelinesRoutes);
 
 app.get('/api/health', (req, res) => {

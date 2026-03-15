@@ -1,6 +1,7 @@
 const express = require('express');
 const User = require('../models/User');
 const { protect, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('../utils/activityLog');
 
 const router = express.Router();
 
@@ -70,6 +71,14 @@ router.post('/', async (req, res) => {
       await User.findByIdAndUpdate(vendor._id, { approvalStatus: 'approved' });
     }
     const v = await User.findById(vendor._id).select('name email vendorName approvalStatus branchId').populate('branchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Added staff ${v.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { branchName: v.branchId?.name, email: v.email },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       vendor: {
@@ -121,6 +130,15 @@ router.patch('/:id/approve', async (req, res) => {
     }
     vendor.approvalStatus = 'approved';
     await vendor.save();
+    const v = await User.findById(vendor._id).populate('branchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Approved staff: ${vendor.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: vendor.email },
+    }).catch(() => {});
     res.json({
       success: true,
       message: 'Vendor approved.',
@@ -145,6 +163,15 @@ router.patch('/:id/reject', async (req, res) => {
     }
     vendor.approvalStatus = 'rejected';
     await vendor.save();
+    const v = await User.findById(vendor._id).populate('branchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Rejected staff: ${vendor.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: vendor.email },
+    }).catch(() => {});
     res.json({
       success: true,
       message: 'Vendor rejected.',
@@ -169,6 +196,14 @@ router.patch('/:id/block', async (req, res) => {
     vendor.isActive = false;
     await vendor.save();
     const v = await User.findById(vendor._id).select('name email vendorName approvalStatus branchId isActive').populate('branchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Blocked staff: ${v.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: v.email },
+    }).catch(() => {});
     res.json({
       success: true,
       message: 'Vendor blocked.',
@@ -196,6 +231,14 @@ router.patch('/:id/active', async (req, res) => {
     vendor.isActive = true;
     await vendor.save();
     const v = await User.findById(vendor._id).select('name email vendorName approvalStatus branchId isActive').populate('branchId', 'name').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Activated staff: ${v.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: v.email },
+    }).catch(() => {});
     res.json({
       success: true,
       message: 'Vendor activated.',
@@ -250,6 +293,14 @@ router.patch('/:id', async (req, res) => {
     if (branchId !== undefined) vendor.branchId = branchId || null;
     await vendor.save();
     const v = await User.findById(vendor._id).select('name email vendorName approvalStatus branchId isActive').populate('branchId', 'name code').lean();
+    createActivityLog({
+      userId: req.user._id,
+      branchId: v.branchId?._id || v.branchId,
+      description: `Updated staff: ${v.name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: v.email, branchName: v.branchId?.name },
+    }).catch(() => {});
     res.json({
       success: true,
       vendor: {
@@ -271,9 +322,19 @@ router.patch('/:id', async (req, res) => {
 /** Delete vendor permanently. Admin must confirm (handled in frontend). */
 router.delete('/:id', async (req, res) => {
   try {
-    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor' });
+    const vendor = await User.findOne({ _id: req.params.id, role: 'vendor' }).populate('branchId', 'name').lean();
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found.' });
+    const name = vendor.name;
+    const branchId = vendor.branchId?._id || vendor.branchId;
     await User.findByIdAndDelete(vendor._id);
+    createActivityLog({
+      userId: req.user._id,
+      branchId,
+      description: `Deleted staff: ${name}`,
+      entity: 'vendor',
+      entityId: vendor._id,
+      details: { email: vendor.email },
+    }).catch(() => {});
     res.json({ success: true, message: 'Vendor deleted.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to delete vendor.' });

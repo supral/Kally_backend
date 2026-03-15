@@ -10,6 +10,8 @@ const Customer = require('../models/Customer');
 const Branch = require('../models/Branch');
 const { protect, authorize } = require('../middleware/auth');
 const { getBranchId } = require('../middleware/branchFilter');
+const { createActivityLog } = require('../utils/activityLog');
+const { validateBulkIds } = require('../utils/validateBulkIds');
 
 async function getDefaultMembershipTypeId() {
   let type = await MembershipType.findOne({ isActive: true }).sort({ name: 1 }).lean();
@@ -38,21 +40,26 @@ router.post('/bulk-delete', authorize('admin'), async (req, res) => {
     if (confirm !== 'DELETE_SELECTED_MEMBERSHIPS') {
       return res.status(400).json({ success: false, message: 'Confirmation required.' });
     }
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: 'ids[] is required.' });
-    }
-    if (ids.length > 5000) {
-      return res.status(400).json({ success: false, message: 'Too many ids. Max 5000 per request.' });
-    }
+    const { valid, ids: objectIds, message } = validateBulkIds(ids);
+    if (!valid) return res.status(400).json({ success: false, message: message || 'Invalid ids.' });
     const [usages, settlements, memberships] = await Promise.all([
-      MembershipUsage.deleteMany({ membershipId: { $in: ids } }),
-      InternalSettlement.deleteMany({ membershipId: { $in: ids } }),
-      Membership.deleteMany({ _id: { $in: ids } }),
+      MembershipUsage.deleteMany({ membershipId: { $in: objectIds } }),
+      InternalSettlement.deleteMany({ membershipId: { $in: objectIds } }),
+      Membership.deleteMany({ _id: { $in: objectIds } }),
     ]);
+    const count = memberships.deletedCount ?? 0;
+    if (count > 0) {
+      createActivityLog({
+        userId: req.user._id,
+        description: `Bulk deleted ${count} membership(s)`,
+        entity: 'membership',
+        details: { count },
+      }).catch(() => {});
+    }
     return res.json({
       success: true,
       deleted: {
-        memberships: memberships.deletedCount ?? 0,
+        memberships: count,
         membershipUsages: usages.deletedCount ?? 0,
         internalSettlements: settlements.deletedCount ?? 0,
       },
@@ -177,6 +184,21 @@ router.post('/', async (req, res) => {
       .populate('membershipTypeId', 'name totalCredits')
       .populate('soldAtBranchId', 'name')
       .lean();
+
+    createActivityLog({
+      userId: req.user._id,
+      branchId: m.soldAtBranchId?._id || m.soldAtBranchId,
+      description: `Sold membership: ${packageName}`,
+      entity: 'membership',
+      entityId: membership._id,
+      details: {
+        packageName,
+        packagePrice: effectivePrice,
+        branchName: m.soldAtBranchId?.name,
+        customerName: m.customerId?.name,
+        totalCredits: m.membershipTypeId?.totalCredits ?? m.totalCredits,
+      },
+    }).catch(() => {});
 
     res.status(201).json({
       success: true,
@@ -350,6 +372,14 @@ router.patch('/:id', async (req, res) => {
       .populate('soldAtBranchId', 'name')
       .lean();
 
+    createActivityLog({
+      userId: req.user._id,
+      branchId: m.soldAtBranchId?._id || m.soldAtBranchId,
+      description: 'Updated membership',
+      entity: 'membership',
+      entityId: membership._id,
+      details: { customerName: m.customerId?.name, status: m.status, usedCredits: m.usedCredits },
+    }).catch(() => {});
     res.json({
       success: true,
       membership: {
@@ -369,10 +399,21 @@ router.patch('/:id', async (req, res) => {
 /** DELETE /api/memberships/:id - delete a membership (admin only). Removes usage records then the membership. */
 router.delete('/:id', authorize('admin'), async (req, res) => {
   try {
-    const membership = await Membership.findById(req.params.id);
+    const membership = await Membership.findById(req.params.id)
+      .populate('customerId', 'name')
+      .populate('soldAtBranchId', 'name')
+      .lean();
     if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
     await MembershipUsage.deleteMany({ membershipId: membership._id });
     await Membership.findByIdAndDelete(membership._id);
+    createActivityLog({
+      userId: req.user._id,
+      branchId: membership.soldAtBranchId?._id || membership.soldAtBranchId,
+      description: 'Deleted membership',
+      entity: 'membership',
+      entityId: membership._id,
+      details: { customerName: membership.customerId?.name },
+    }).catch(() => {});
     res.json({ success: true, message: 'Membership deleted.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to delete membership.' });
@@ -433,6 +474,14 @@ router.post('/:id/renew', async (req, res) => {
       .populate('soldAtBranchId', 'name')
       .lean();
 
+    createActivityLog({
+      userId: req.user._id,
+      branchId: m.soldAtBranchId?._id || m.soldAtBranchId,
+      description: 'Renewed membership',
+      entity: 'membership',
+      entityId: m._id,
+      details: { packageName, customerName: m.customerId?.name, totalCredits: m.totalCredits },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       membership: {
@@ -515,6 +564,14 @@ router.post('/:id/use', async (req, res) => {
       .populate('usedAtBranchId', 'name')
       .lean();
 
+    createActivityLog({
+      userId: req.user._id,
+      branchId: usedAtBranchId,
+      description: 'Used membership credit(s)',
+      entity: 'membership',
+      entityId: membership._id,
+      details: { customerName: membership.customerId?.name, creditsUsed: toUse, remainingCredits: membership.totalCredits - membership.usedCredits },
+    }).catch(() => {});
     res.status(201).json({
       success: true,
       usage: {
