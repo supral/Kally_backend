@@ -11,6 +11,7 @@ const Customer = require('../models/Customer');
 const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 const { getBranchId } = require('../middleware/branchFilter');
+const { getJson: redisGetJson, setJson: redisSetJson } = require('../config/redis');
 
 const router = express.Router();
 
@@ -78,6 +79,10 @@ router.get('/branch-dashboard', async (req, res) => {
       });
     }
 
+    const cacheKey = `branch-dashboard:${bid}:${fromDate.toISOString()}:${toDate.toISOString()}`;
+    const cached = await redisGetJson(cacheKey);
+    if (cached) return res.json(cached);
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -144,7 +149,7 @@ router.get('/branch-dashboard', async (req, res) => {
     let membershipSalesRevenue = 0;
     membershipsInPeriod.forEach((m) => { membershipSalesRevenue += effectivePrice(m); });
 
-    res.json({
+    const payload = {
       success: true,
       from: fromDate,
       to: toDate,
@@ -182,7 +187,9 @@ router.get('/branch-dashboard', async (req, res) => {
         expiryDate: m.expiryDate,
         packageName: m.membershipTypeId?.name || m.packageName || '—',
       })),
-    });
+    };
+    await redisSetJson(cacheKey, payload, 60);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Branch dashboard failed.' });
   }
@@ -204,6 +211,10 @@ router.get('/sales-dashboard', async (req, res) => {
     const page = Math.max(1, parseInt(breakdownPage, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(breakdownLimit, 10) || 10));
     const skip = (page - 1) * limit;
+
+    const salesCacheKey = `sales-dashboard:${req.user.role}:${req.user._id || 'anon'}:${branchId || bid || 'all'}:${fromDate.toISOString()}:${toDate.toISOString()}:${serviceCategory || 'all'}:${packageName || 'all'}:${page}:${limit}`;
+    const salesCached = await redisGetJson(salesCacheKey);
+    if (salesCached) return res.json(salesCached);
 
     let breakdownFilter = { ...branchFilter };
     if (packageName) {
@@ -293,7 +304,7 @@ router.get('/sales-dashboard', async (req, res) => {
     });
 
     const branches = await Branch.find({ isActive: true }).lean();
-    res.json({
+    const salesPayload = {
       success: true,
       from: fromDate,
       to: toDate,
@@ -310,7 +321,9 @@ router.get('/sales-dashboard', async (req, res) => {
       dailySales,
       totalMemberships: memberships.length,
       branches: branches.map((b) => ({ id: b._id, name: b.name })),
-    });
+    };
+    await redisSetJson(salesCacheKey, salesPayload, 60);
+    res.json(salesPayload);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Report failed.' });
   }
