@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Settings = require('../models/Settings');
 const User = require('../models/User');
 const Customer = require('../models/Customer');
@@ -278,8 +279,9 @@ router.post('/import-legacy-data', async (req, res) => {
 
       for (const r of batch) {
         const legacyCustomerId = String(r.customer_id || '').trim();
-        const customerId = legacyCustomerId ? legacyIdMap[legacyCustomerId] : null;
-        if (!customerId) continue;
+        const customerIdStr = legacyCustomerId ? legacyIdMap[legacyCustomerId] : null;
+        if (!customerIdStr || !mongoose.Types.ObjectId.isValid(customerIdStr)) continue;
+        const customerId = new mongoose.Types.ObjectId(customerIdStr);
 
         const pkgName = String(r.package_name || '').trim();
         if (!pkgName) continue;

@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Membership = require('../models/Membership');
 const Package = require('../models/Package');
 const MembershipType = require('../models/MembershipType');
@@ -159,20 +160,48 @@ router.get('/', async (req, res) => {
     const needLegacyResolution = memberships.some(
       (m) =>
         (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
+        (typeof m.customerId === 'string' && m.customerId) ||
         (m.soldAtBranchId == null && (m.branch_id != null || m.sold_at != null || m.soldAt != null)) ||
         (m.totalCredits == null && (m.package_id != null || m.total_used_remaining != null || m.totalUsedRemaining != null))
     );
     let customersByIndex = [];
+    let customerById = new Map();
     let branchesByIndex = [];
     let packagesByIndex = [];
     let branchIdByNormName = new Map();
     if (needLegacyResolution) {
-      const [customersAll, branchesAll, packagesAll] = await Promise.all([
-        Customer.find({}).select('name phone email membershipCardId customer_name contact id').sort({ _id: 1 }).lean(),
+      const hasIndexLegacyCustomer = memberships.some((m) => m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null));
+      const hasStringCustomerId = memberships.some((m) => typeof m.customerId === 'string' && m.customerId);
+
+      const customerDocsPromise = hasStringCustomerId
+        ? (async () => {
+            const ids = Array.from(
+              new Set(
+                memberships
+                  .map((m) => (typeof m.customerId === 'string' ? m.customerId : null))
+                  .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
+              )
+            ).map((x) => new mongoose.Types.ObjectId(x));
+            if (!ids.length) return [];
+            return Customer.find({ _id: { $in: ids } })
+              .select('name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
+              .lean();
+          })()
+        : Promise.resolve([]);
+
+      const customersAllPromise = hasIndexLegacyCustomer
+        ? Customer.find({}).select('name phone email membershipCardId customer_name contact id').sort({ _id: 1 }).lean()
+        : Promise.resolve([]);
+
+      const [customersAll, customersByIdDocs, branchesAll, packagesAll] = await Promise.all([
+        customersAllPromise,
+        customerDocsPromise,
         Branch.find({}).select('name').sort({ _id: 1 }).lean(),
         Package.find({}).select('name price totalSessions').sort({ _id: 1 }).lean(),
       ]);
+
       customersByIndex = customersAll;
+      customerById = new Map(customersByIdDocs.map((c) => [String(c._id), c]));
       branchesByIndex = branchesAll;
       packagesByIndex = packagesAll;
       branchIdByNormName = new Map(
@@ -185,6 +214,10 @@ router.get('/', async (req, res) => {
     const resolveLegacy = (m) => {
       const out = { ...m };
       // customer
+      if (typeof out.customerId === 'string' && customerById.size) {
+        const c = customerById.get(out.customerId);
+        if (c) out.customerId = c;
+      }
       if (!out.customerId && out.customer_id != null) {
         const idx = Math.max(0, parseInt(String(out.customer_id), 10) - 1);
         const c = customersByIndex[idx];
