@@ -2,9 +2,31 @@ const redis = require('redis');
 
 let client = null;
 
-if (process.env.REDIS_URL) {
+function buildRedisUrlFromParts() {
+  const host = (process.env.REDIS_HOST || '').trim();
+  const port = (process.env.REDIS_PORT || '').trim();
+  const user = (process.env.REDIS_USER || 'default').trim();
+  const password = (process.env.REDIS_PASSWORD || '').trim();
+  const tls = String(process.env.REDIS_TLS || '').trim();
+
+  if (!host) return null;
+  const hasProtocol = /^rediss?:\/\//i.test(host);
+  if (hasProtocol) return host;
+
+  const scheme = tls === '1' || /^true$/i.test(tls) ? 'rediss' : 'redis';
+  const auth =
+    password
+      ? `${encodeURIComponent(user)}:${encodeURIComponent(password)}@`
+      : (user ? `${encodeURIComponent(user)}@` : '');
+  const hp = port ? `${host}:${port}` : host;
+  return `${scheme}://${auth}${hp}`;
+}
+
+const redisUrl = (process.env.REDIS_URL || '').trim() || buildRedisUrlFromParts();
+
+if (redisUrl) {
   client = redis.createClient({
-    url: process.env.REDIS_URL,
+    url: redisUrl,
   });
   client.on('error', (err) => {
     console.error('Redis error:', err.message || err);
@@ -19,7 +41,7 @@ if (process.env.REDIS_URL) {
       client = null;
     });
 } else {
-  console.log('REDIS_URL not set, Redis cache disabled.');
+  console.log('Redis config not set (REDIS_URL or REDIS_HOST/REDIS_PORT), Redis cache disabled.');
 }
 
 function isReady() {

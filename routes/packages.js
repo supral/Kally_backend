@@ -9,14 +9,77 @@ const { validateBulkIds } = require('../utils/validateBulkIds');
 const router = express.Router();
 router.use(protect);
 
-/** GET /api/packages or /api/packages/ - list packages. Default: active only (dropdown). ?all=true for admin: all */
+/** GET /api/packages or /api/packages/ - list packages.
+ * Default: active only (dropdown). ?all=true for admin: all.
+ *
+ * Server-side paging/search (used by Packages page):
+ * - ?page=1&limit=100
+ * - ?search=... (matches name, status, sessions)
+ */
 const listPackages = async (req, res) => {
   try {
     const all = req.query.all === 'true' && req.user?.role === 'admin';
+    const pageParam = req.query.page;
+    const limitParam = req.query.limit;
+    const searchParam = (req.query.search || req.query.q || '').toString().trim();
+
+    const wantsPaging = pageParam != null || limitParam != null || searchParam.length > 0;
+
     const filter = all ? {} : { isActive: true };
-    const list = await Package.find(filter).sort({ name: 1 }).lean();
+
+    if (!wantsPaging) {
+      const list = await Package.find(filter).sort({ name: 1 }).lean();
+      return res.json({
+        success: true,
+        packages: list.map((p) => {
+          const discount = p.discountAmount ?? 0;
+          const sessions = p.totalSessions ?? 1;
+          let settlement = p.settlementAmount;
+          if (settlement == null && sessions > 0) {
+            settlement = computeSettlementAmount(p.price, discount, sessions);
+          }
+          return {
+            id: p._id,
+            name: p.name,
+            price: p.price,
+            discountAmount: discount,
+            totalSessions: sessions,
+            settlementAmount: settlement,
+            isActive: p.isActive,
+          };
+        }),
+      });
+    }
+
+    const page = Math.max(1, parseInt(String(pageParam || '1'), 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(String(limitParam || '100'), 10) || 100));
+
+    const search = searchParam.toLowerCase();
+    if (search) {
+      const statusMatch = search === 'active' ? true : search === 'inactive' ? false : null;
+      filter.$or = [
+        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { totalSessions: Number.isFinite(Number(search)) ? Number(search) : -999999 },
+      ];
+      if (statusMatch !== null) filter.$or.push({ isActive: statusMatch });
+    }
+
+    const [total, list] = await Promise.all([
+      Package.countDocuments(filter),
+      Package.find(filter)
+        .sort({ name: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const pages = Math.max(1, Math.ceil(total / limit));
     res.json({
       success: true,
+      page,
+      limit,
+      total,
+      pages,
       packages: list.map((p) => {
         const discount = p.discountAmount ?? 0;
         const sessions = p.totalSessions ?? 1;

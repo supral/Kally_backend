@@ -126,7 +126,8 @@ const MAX_MEMBERSHIPS_LIMIT = 60000;
 
 router.get('/', async (req, res) => {
   try {
-    const { branchId, customerId, status, dateFrom, dateTo, limit: limitParam } = req.query;
+    const { branchId, customerId, status, dateFrom, dateTo, limit: limitParam, page: pageParam } = req.query;
+    const searchParam = (req.query.search || req.query.q || '').toString().trim();
     const filter = {};
     // Universal: all branches see all memberships (so any branch can do credit redeem). Admin can filter by sold-at branch for reporting.
     if (req.user.role === 'admin' && branchId) filter.soldAtBranchId = branchId;
@@ -144,20 +145,377 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const limit = limitParam ? Math.min(MAX_MEMBERSHIPS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : DEFAULT_MEMBERSHIPS_LIMIT;
-    const memberships = await Membership.find(filter)
-      // Include legacy customer fields too (older DBs used customer_name/contact/id).
-      .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
-      .populate('membershipTypeId', 'name totalCredits')
-      .populate('soldAtBranchId', 'name')
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean();
+    const wantsPaging = pageParam != null || limitParam != null || searchParam.length > 0;
+
+    if (!wantsPaging) {
+      const limit = limitParam ? Math.min(MAX_MEMBERSHIPS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : DEFAULT_MEMBERSHIPS_LIMIT;
+      const memberships = await Membership.find(filter)
+        // Include legacy customer fields too (older DBs used customer_name/contact/id).
+        .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
+        .populate('membershipTypeId', 'name totalCredits')
+        .populate('soldAtBranchId', 'name')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+
+      // Legacy resolution + mapping below (existing behavior)
+      const needLegacyResolution = memberships.some(
+        (m) =>
+          (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
+          (typeof m.customerId === 'string' && m.customerId) ||
+          (m.soldAtBranchId == null && (m.branch_id != null || m.sold_at != null || m.soldAt != null)) ||
+          (m.totalCredits == null && (m.package_id != null || m.total_used_remaining != null || m.totalUsedRemaining != null))
+      );
+      let customersByIndex = [];
+      let customerById = new Map();
+      let branchesByIndex = [];
+      let packagesByIndex = [];
+      let branchIdByNormName = new Map();
+      if (needLegacyResolution) {
+        const hasIndexLegacyCustomer = memberships.some((m) => m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null));
+        const hasStringCustomerId = memberships.some((m) => typeof m.customerId === 'string' && m.customerId);
+
+        const customerDocsPromise = hasStringCustomerId
+          ? (async () => {
+              const ids = Array.from(
+                new Set(
+                  memberships
+                    .map((m) => (typeof m.customerId === 'string' ? m.customerId : null))
+                    .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
+                )
+              ).map((x) => new mongoose.Types.ObjectId(x));
+              if (!ids.length) return [];
+              return Customer.find({ _id: { $in: ids } })
+                .select('name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
+                .lean();
+            })()
+          : Promise.resolve([]);
+
+        const customersAllPromise = hasIndexLegacyCustomer
+          ? Customer.find({}).select('name phone email membershipCardId customer_name contact id').sort({ _id: 1 }).lean()
+          : Promise.resolve([]);
+
+        const [customersAll, customersByIdDocs, branchesAll, packagesAll] = await Promise.all([
+          customersAllPromise,
+          customerDocsPromise,
+          Branch.find({}).select('name').sort({ _id: 1 }).lean(),
+          Package.find({}).select('name price totalSessions').sort({ _id: 1 }).lean(),
+        ]);
+
+        customersByIndex = customersAll;
+        customerById = new Map(customersByIdDocs.map((c) => [String(c._id), c]));
+        branchesByIndex = branchesAll;
+        packagesByIndex = packagesAll;
+        branchIdByNormName = new Map(
+          branchesAll
+            .map((b) => [normalizeBranchName(b.name), b._id])
+            .filter(([k]) => k)
+        );
+      }
+
+      const resolveLegacy = (m) => {
+        const out = { ...m };
+        // customer
+        if (typeof out.customerId === 'string' && customerById.size) {
+          const c = customerById.get(out.customerId);
+          if (c) out.customerId = c;
+        }
+        if (!out.customerId && out.customer_id != null) {
+          const idx = Math.max(0, parseInt(String(out.customer_id), 10) - 1);
+          const c = customersByIndex[idx];
+          if (c) out.customerId = c;
+        }
+        // soldAt branch
+        if (!out.soldAtBranchId && out.branch_id != null) {
+          const idx = Math.max(0, parseInt(String(out.branch_id), 10) - 1);
+          const b = branchesByIndex[idx];
+          if (b) out.soldAtBranchId = b;
+        }
+        // sold_at branch name (cm.json style)
+        if (!out.soldAtBranchId && (out.sold_at != null || out.soldAt != null || out.sold_at_branch != null)) {
+          const name = out.sold_at || out.soldAt || out.sold_at_branch;
+          const norm = normalizeBranchName(name);
+          const bid = branchIdByNormName.get(norm);
+          if (bid) out.soldAtBranchId = { _id: bid, name };
+          else if (name) out.soldAtBranch = name;
+        }
+        // package
+        if (out.packageName == null && (out.package_name != null || out.packageNameLegacy != null)) {
+          out.packageName = out.package_name || out.packageNameLegacy;
+        }
+        if ((out.totalCredits == null || out.totalCredits === 0) && out.package_id != null) {
+          const idx = Math.max(0, parseInt(String(out.package_id), 10) - 1);
+          const p = packagesByIndex[idx];
+          if (p) {
+            out.totalCredits = p.totalSessions ?? out.totalCredits;
+            out.packageName = out.packageName || p.name;
+            if (out.packagePrice == null && p.price != null) out.packagePrice = p.price;
+          }
+        }
+        // total_used_remaining (cm.json style)
+        if ((out.totalCredits == null || out.usedCredits == null) && (out.total_used_remaining != null || out.totalUsedRemaining != null)) {
+          const parsed = parseTotalUsedRemaining(out.total_used_remaining || out.totalUsedRemaining);
+          if (out.totalCredits == null) out.totalCredits = parsed.totalCredits;
+          if (out.usedCredits == null) out.usedCredits = parsed.usedCredits;
+          if (out.remainingCredits == null) out.remainingCredits = parsed.remainingCredits;
+        }
+        return out;
+      };
+
+      return res.json({
+        success: true,
+        memberships: memberships.map((raw) => {
+          const m = needLegacyResolution ? resolveLegacy(raw) : raw;
+          const totalCredits = toNumber(m.totalCredits, toNumber(m.membershipTypeId?.totalCredits, 0));
+          const usedCredits = toNumber(m.usedCredits, toNumber(m.used_credits, 0));
+          return ({
+            id: m._id,
+            customer: mapLegacyCustomer(m.customerId),
+            typeName: m.membershipTypeId?.name,
+            packageName: m.packageName || m.package_name || m.package_name_text || m.membershipTypeId?.name,
+            totalCredits,
+            usedCredits,
+            remainingCredits: Math.max(0, toNumber(m.remainingCredits, totalCredits - usedCredits)),
+            soldAtBranch: m.soldAtBranchId?.name || m.soldAtBranch || m.sold_at,
+            soldAtBranchId: m.soldAtBranchId?._id || m.soldAtBranchId,
+            purchaseDate: m.purchaseDate,
+            expiryDate: m.expiryDate,
+            status: (() => {
+              const s = (m.status || m.membership_status || 'active');
+              const up = String(s).toLowerCase();
+              if (up === 'inactive') return 'expired';
+              return up;
+            })(),
+            packagePrice: m.packagePrice,
+            discountAmount: m.discountAmount ?? 0,
+          });
+        }),
+      });
+    }
+
+    // Server-side paging/search (used by Memberships page)
+    const page = Math.max(1, parseInt(String(pageParam || '1'), 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(String(limitParam || '100'), 10) || 100));
+    const skip = (page - 1) * limit;
+
+    const safeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const search = searchParam.trim();
+
+    if (!search) {
+      const [total, memberships] = await Promise.all([
+        Membership.countDocuments(filter),
+        Membership.find(filter)
+          .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
+          .populate('membershipTypeId', 'name totalCredits')
+          .populate('soldAtBranchId', 'name')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+      ]);
+
+      const pages = Math.max(1, Math.ceil(total / limit));
+
+      // Legacy resolution (same logic, but only on returned page)
+      const needLegacyResolution = memberships.some(
+        (m) =>
+          (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
+          (typeof m.customerId === 'string' && m.customerId) ||
+          (m.soldAtBranchId == null && (m.branch_id != null || m.sold_at != null || m.soldAt != null)) ||
+          (m.totalCredits == null && (m.package_id != null || m.total_used_remaining != null || m.totalUsedRemaining != null))
+      );
+      let customersByIndex = [];
+      let customerById = new Map();
+      let branchesByIndex = [];
+      let packagesByIndex = [];
+      let branchIdByNormName = new Map();
+      if (needLegacyResolution) {
+        const hasIndexLegacyCustomer = memberships.some((m) => m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null));
+        const hasStringCustomerId = memberships.some((m) => typeof m.customerId === 'string' && m.customerId);
+
+        const customerDocsPromise = hasStringCustomerId
+          ? (async () => {
+              const ids = Array.from(
+                new Set(
+                  memberships
+                    .map((m) => (typeof m.customerId === 'string' ? m.customerId : null))
+                    .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
+                )
+              ).map((x) => new mongoose.Types.ObjectId(x));
+              if (!ids.length) return [];
+              return Customer.find({ _id: { $in: ids } })
+                .select('name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
+                .lean();
+            })()
+          : Promise.resolve([]);
+
+        const customersAllPromise = hasIndexLegacyCustomer
+          ? Customer.find({}).select('name phone email membershipCardId customer_name contact id').sort({ _id: 1 }).lean()
+          : Promise.resolve([]);
+
+        const [customersAll, customersByIdDocs, branchesAll, packagesAll] = await Promise.all([
+          customersAllPromise,
+          customerDocsPromise,
+          Branch.find({}).select('name').sort({ _id: 1 }).lean(),
+          Package.find({}).select('name price totalSessions').sort({ _id: 1 }).lean(),
+        ]);
+
+        customersByIndex = customersAll;
+        customerById = new Map(customersByIdDocs.map((c) => [String(c._id), c]));
+        branchesByIndex = branchesAll;
+        packagesByIndex = packagesAll;
+        branchIdByNormName = new Map(
+          branchesAll
+            .map((b) => [normalizeBranchName(b.name), b._id])
+            .filter(([k]) => k)
+        );
+      }
+
+      const resolveLegacy = (m) => {
+        const out = { ...m };
+        if (typeof out.customerId === 'string' && customerById.size) {
+          const c = customerById.get(out.customerId);
+          if (c) out.customerId = c;
+        }
+        if (!out.customerId && out.customer_id != null) {
+          const idx = Math.max(0, parseInt(String(out.customer_id), 10) - 1);
+          const c = customersByIndex[idx];
+          if (c) out.customerId = c;
+        }
+        if (!out.soldAtBranchId && out.branch_id != null) {
+          const idx = Math.max(0, parseInt(String(out.branch_id), 10) - 1);
+          const b = branchesByIndex[idx];
+          if (b) out.soldAtBranchId = b;
+        }
+        if (!out.soldAtBranchId && (out.sold_at != null || out.soldAt != null || out.sold_at_branch != null)) {
+          const name = out.sold_at || out.soldAt || out.sold_at_branch;
+          const norm = normalizeBranchName(name);
+          const bid = branchIdByNormName.get(norm);
+          if (bid) out.soldAtBranchId = { _id: bid, name };
+          else if (name) out.soldAtBranch = name;
+        }
+        if (out.packageName == null && (out.package_name != null || out.packageNameLegacy != null)) {
+          out.packageName = out.package_name || out.packageNameLegacy;
+        }
+        if ((out.totalCredits == null || out.totalCredits === 0) && out.package_id != null) {
+          const idx = Math.max(0, parseInt(String(out.package_id), 10) - 1);
+          const p = packagesByIndex[idx];
+          if (p) {
+            out.totalCredits = p.totalSessions ?? out.totalCredits;
+            out.packageName = out.packageName || p.name;
+            if (out.packagePrice == null && p.price != null) out.packagePrice = p.price;
+          }
+        }
+        if ((out.totalCredits == null || out.usedCredits == null) && (out.total_used_remaining != null || out.totalUsedRemaining != null)) {
+          const parsed = parseTotalUsedRemaining(out.total_used_remaining || out.totalUsedRemaining);
+          if (out.totalCredits == null) out.totalCredits = parsed.totalCredits;
+          if (out.usedCredits == null) out.usedCredits = parsed.usedCredits;
+          if (out.remainingCredits == null) out.remainingCredits = parsed.remainingCredits;
+        }
+        return out;
+      };
+
+      return res.json({
+        success: true,
+        page,
+        limit,
+        total,
+        pages,
+        memberships: memberships.map((raw) => {
+          const m = needLegacyResolution ? resolveLegacy(raw) : raw;
+          const totalCredits = toNumber(m.totalCredits, toNumber(m.membershipTypeId?.totalCredits, 0));
+          const usedCredits = toNumber(m.usedCredits, toNumber(m.used_credits, 0));
+          return ({
+            id: m._id,
+            customer: mapLegacyCustomer(m.customerId),
+            typeName: m.membershipTypeId?.name,
+            packageName: m.packageName || m.package_name || m.package_name_text || m.membershipTypeId?.name,
+            totalCredits,
+            usedCredits,
+            remainingCredits: Math.max(0, toNumber(m.remainingCredits, totalCredits - usedCredits)),
+            soldAtBranch: m.soldAtBranchId?.name || m.soldAtBranch || m.sold_at,
+            soldAtBranchId: m.soldAtBranchId?._id || m.soldAtBranchId,
+            purchaseDate: m.purchaseDate,
+            expiryDate: m.expiryDate,
+            status: (() => {
+              const s = (m.status || m.membership_status || 'active');
+              const up = String(s).toLowerCase();
+              if (up === 'inactive') return 'expired';
+              return up;
+            })(),
+            packagePrice: m.packagePrice,
+            discountAmount: m.discountAmount ?? 0,
+          });
+        }),
+      });
+    }
+
+    // Search mode (uses aggregation so we can match customer + branch names)
+    const rx = new RegExp(safeRegex(search), 'i');
+    const match = { ...filter };
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: 'customers',
+          localField: 'customerId',
+          foreignField: '_id',
+          as: 'customerDoc',
+        },
+      },
+      { $unwind: { path: '$customerDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'branches',
+          localField: 'soldAtBranchId',
+          foreignField: '_id',
+          as: 'soldAtBranchDoc',
+        },
+      },
+      { $unwind: { path: '$soldAtBranchDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'membershiptypes',
+          localField: 'membershipTypeId',
+          foreignField: '_id',
+          as: 'typeDoc',
+        },
+      },
+      { $unwind: { path: '$typeDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $match: {
+          $or: [
+            { 'customerDoc.name': rx },
+            { 'customerDoc.phone': rx },
+            { 'customerDoc.email': rx },
+            { 'customerDoc.membershipCardId': rx },
+            { packageName: rx },
+            { package_name: rx },
+            { package_name_text: rx },
+            { status: rx },
+            { 'soldAtBranchDoc.name': rx },
+          ],
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          meta: [{ $count: 'total' }],
+        },
+      },
+    ];
+
+    const agg = await Membership.aggregate(pipeline);
+    const data = (agg?.[0]?.data || []);
+    const total = agg?.[0]?.meta?.[0]?.total || 0;
+    const pages = Math.max(1, Math.ceil(total / limit));
 
     // Legacy memberships (from older PHP/MySQL exports) may store foreign keys as numeric strings:
     // customer_id, branch_id, package_id, plus optional package_name/package_price.
     // If those exist, we resolve them by index against current collections (sorted by _id).
-    const needLegacyResolution = memberships.some(
+    const needLegacyResolution = data.some(
       (m) =>
         (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
         (typeof m.customerId === 'string' && m.customerId) ||
@@ -170,14 +528,14 @@ router.get('/', async (req, res) => {
     let packagesByIndex = [];
     let branchIdByNormName = new Map();
     if (needLegacyResolution) {
-      const hasIndexLegacyCustomer = memberships.some((m) => m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null));
-      const hasStringCustomerId = memberships.some((m) => typeof m.customerId === 'string' && m.customerId);
+      const hasIndexLegacyCustomer = data.some((m) => m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null));
+      const hasStringCustomerId = data.some((m) => typeof m.customerId === 'string' && m.customerId);
 
       const customerDocsPromise = hasStringCustomerId
         ? (async () => {
             const ids = Array.from(
               new Set(
-                memberships
+                data
                   .map((m) => (typeof m.customerId === 'string' ? m.customerId : null))
                   .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
               )
@@ -262,7 +620,11 @@ router.get('/', async (req, res) => {
 
     res.json({
       success: true,
-      memberships: memberships.map((raw) => {
+      page,
+      limit,
+      total,
+      pages,
+      memberships: data.map((raw) => {
         const m = needLegacyResolution ? resolveLegacy(raw) : raw;
         const totalCredits = toNumber(m.totalCredits, toNumber(m.membershipTypeId?.totalCredits, 0));
         const usedCredits = toNumber(m.usedCredits, toNumber(m.used_credits, 0));

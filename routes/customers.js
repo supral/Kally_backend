@@ -325,12 +325,16 @@ router.get('/', async (req, res) => {
   try {
     const forDropdown = req.query.forDropdown === '1' || req.query.forDropdown === 'true';
     const branchIdQuery = req.query.branchId;
+    const pageParam = req.query.page;
+    const limitParam = req.query.limit;
+    const searchParam = (req.query.search || req.query.q || '').toString().trim();
+
+    const wantsPaging = !forDropdown && (pageParam != null || limitParam != null || searchParam.length > 0 || (req.user.role === 'admin' && branchIdQuery));
     let filter = {};
     if (!forDropdown && req.user.role === 'admin' && branchIdQuery) {
       filter = { primaryBranchId: branchIdQuery };
     }
     // Universal customers: all branches see all customers. Admin can optionally filter by primary branch for reporting.
-    const limitParam = req.query.limit;
     // Default was 500, which made the UI look like it "can't add more than 500 customers" because lists/dropdowns
     // would never fetch beyond the first 500. We allow larger lists; UI should still prefer search for performance.
     // For large imports, we allow up to 50k; default is 20k so big accounts can see most/all customers.
@@ -338,12 +342,6 @@ router.get('/', async (req, res) => {
 
     // Some older databases used legacy field names (e.g. customer_name/contact/id).
     // We sort by both to keep the list stable across mixed data.
-    const customers = await Customer.find(filter)
-      .populate('primaryBranchId', 'name')
-      .sort({ name: 1, customer_name: 1 })
-      .limit(limit)
-      .lean();
-
     const mapCustomer = (c) => {
       const name = c.name || c.customer_name || c.customerName || '';
       const phone = c.phone || c.contact || c.mobile || c.phoneNumber || '';
@@ -363,8 +361,62 @@ router.get('/', async (req, res) => {
       };
     };
 
+    if (!wantsPaging) {
+      const customers = await Customer.find(filter)
+        .populate('primaryBranchId', 'name')
+        .sort({ name: 1, customer_name: 1 })
+        .limit(limit)
+        .lean();
+
+      return res.json({
+        success: true,
+        customers: customers.map(mapCustomer),
+      });
+    }
+
+    const page = Math.max(1, parseInt(String(pageParam || '1'), 10) || 1);
+    const pagedLimit = Math.min(500, Math.max(1, parseInt(String(limitParam || '100'), 10) || 100));
+    const skip = (page - 1) * pagedLimit;
+
+    if (searchParam) {
+      const safe = searchParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(safe, 'i');
+      filter.$or = [
+        { name: rx },
+        { customer_name: rx },
+        { customerName: rx },
+        { phone: rx },
+        { contact: rx },
+        { mobile: rx },
+        { phoneNumber: rx },
+        { email: rx },
+        { customer_email: rx },
+        { customerEmail: rx },
+        { membershipCardId: rx },
+        { cardId: rx },
+        { card_id: rx },
+        { id: rx },
+      ];
+    }
+
+    const [total, customers] = await Promise.all([
+      Customer.countDocuments(filter),
+      Customer.find(filter)
+        .populate('primaryBranchId', 'name')
+        .sort({ name: 1, customer_name: 1 })
+        .skip(skip)
+        .limit(pagedLimit)
+        .lean(),
+    ]);
+
+    const pages = Math.max(1, Math.ceil(total / pagedLimit));
+
     res.json({
       success: true,
+      page,
+      limit: pagedLimit,
+      total,
+      pages,
       customers: customers.map(mapCustomer),
     });
   } catch (err) {
