@@ -38,6 +38,187 @@ const router = express.Router();
 
 router.use(protect);
 
+function extractRows(parsed) {
+  if (Array.isArray(parsed)) {
+    const tableObj = parsed.find((x) => x && typeof x === 'object' && x.type === 'table' && Array.isArray(x.data));
+    if (tableObj) return tableObj.data;
+    return parsed;
+  }
+  if (parsed && typeof parsed === 'object' && Array.isArray(parsed.data)) return parsed.data;
+  return [];
+}
+
+function normalizeBranchName(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '');
+}
+
+/**
+ * POST /api/customers/import-legacy
+ * Admin-only: Import customers from legacy JSON exports (PHPMyAdmin or plain array).
+ *
+ * Body: { data: any } where data is either:
+ * - PHPMyAdmin export array with {type:"table",data:[...]}
+ * - Array of customer rows
+ * - { data: [...] }
+ */
+router.post('/import-legacy', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+
+    const rows = extractRows((req.body || {}).data);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No rows found in JSON.' });
+    }
+
+    const cleanPhone = (s) => String(s || '').replace(/[^\d+]/g, '').trim();
+
+    // Ensure branches exist so we can set primaryBranchId.
+    const branchNames = new Set();
+    for (const r of rows) {
+      if (!r || typeof r !== 'object') continue;
+      const name = String(r.branch || r.primaryBranch || r.primary_branch || '').trim();
+      if (name) branchNames.add(name);
+    }
+    const existingBranches = await Branch.find({ name: { $in: Array.from(branchNames) } }).select('_id name').lean();
+    const branchIdByNorm = new Map(existingBranches.map((b) => [normalizeBranchName(b.name), b._id]));
+    const newBranchOps = [];
+    for (const n of branchNames) {
+      const norm = normalizeBranchName(n);
+      if (!norm || branchIdByNorm.has(norm)) continue;
+      newBranchOps.push({ insertOne: { document: { name: n, isActive: true } } });
+    }
+    if (newBranchOps.length) {
+      await Branch.collection.bulkWrite(newBranchOps, { ordered: false });
+      const refreshed = await Branch.find({ name: { $in: Array.from(branchNames) } }).select('_id name').lean();
+      refreshed.forEach((b) => branchIdByNorm.set(normalizeBranchName(b.name), b._id));
+    }
+
+    const legacyIdMap = {};
+    let imported = 0;
+    let updated = 0;
+
+    const BATCH_SIZE = 1000;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const ops = [];
+      const phoneToLegacyId = new Map();
+      const phones = [];
+
+      for (const r of batch) {
+        if (!r || typeof r !== 'object') continue;
+        const legacyId = String(r.id || r.customer_id || r.customerId || '').trim();
+        const name = String(r.name || r.customer_name || r.customerName || r.customer || '').trim();
+        const phoneRaw = r.phone || r.contact || r.mobile || r.phoneNumber || r.contact_no;
+        const phone = cleanPhone(phoneRaw);
+        const emailRaw = String(r.email || r.customer_email || r.customerEmail || '').trim();
+        const email = emailRaw ? emailRaw.toLowerCase() : undefined;
+        if (!name || !phone) continue;
+
+        const branchName = String(r.branch || r.primaryBranch || r.primary_branch || '').trim();
+        const primaryBranchId = branchName ? branchIdByNorm.get(normalizeBranchName(branchName)) : undefined;
+
+        const membershipCardId = String(r.membershipCardId || r.membership_card_id || r.card_id || r.cardId || legacyId || '').trim() || undefined;
+        const notesParts = [];
+        if (r.street_address) notesParts.push(`Address: ${String(r.street_address).trim()}`);
+        else if (r.address) notesParts.push(`Address: ${String(r.address).trim()}`);
+        if (r.notes) notesParts.push(String(r.notes).trim());
+        const notes = notesParts.length ? notesParts.join('\n') : undefined;
+
+        const $set = {
+          name,
+          phone,
+          ...(email ? { email } : {}),
+          ...(membershipCardId ? { membershipCardId } : {}),
+          ...(notes ? { notes } : {}),
+          ...(primaryBranchId ? { primaryBranchId } : {}),
+        };
+
+        ops.push({
+          updateOne: {
+            filter: { phone },
+            update: { $set },
+            upsert: true,
+          },
+        });
+
+        if (legacyId) phoneToLegacyId.set(phone, legacyId);
+        phones.push(phone);
+      }
+
+      if (ops.length === 0) continue;
+
+      // Track which phones already existed for imported/updated counts.
+      const existingPhones = await Customer.distinct('phone', { phone: { $in: phones } });
+      const existingSet = new Set(existingPhones);
+
+      await Customer.collection.bulkWrite(ops, { ordered: false });
+
+      imported += phones.filter((p) => !existingSet.has(p)).length;
+      updated += phones.filter((p) => existingSet.has(p)).length;
+
+      // Build legacyIdMap by reading back _id for updated/inserted phones.
+      const docs = await Customer.find({ phone: { $in: phones } }).select('_id phone').lean();
+      for (const d of docs) {
+        const legacyId = phoneToLegacyId.get(d.phone);
+        if (legacyId) legacyIdMap[String(legacyId)] = String(d._id);
+      }
+    }
+
+    return res.json({ success: true, imported, updated, legacyIdMap });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to import legacy customers.' });
+  }
+});
+
+/**
+ * POST /api/customers/backfill-branches
+ * Admin-only: set customers.primaryBranchId based on memberships soldAtBranchId.
+ * Useful after imports where customers were created without a branch.
+ */
+router.post('/backfill-branches', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin only.' });
+
+    const pipeline = [
+      { $match: { customerId: { $ne: null }, soldAtBranchId: { $ne: null } } },
+      // Prefer most recent membership for each customer
+      { $sort: { purchaseDate: -1, createdAt: -1 } },
+      {
+        $group: {
+          _id: '$customerId',
+          soldAtBranchId: { $first: '$soldAtBranchId' },
+        },
+      },
+    ];
+    const rows = await Membership.aggregate(pipeline);
+    if (!rows.length) return res.json({ success: true, updated: 0 });
+
+    const ops = [];
+    for (const r of rows) {
+      // Some imported memberships stored customerId as a string, while Customer._id is an ObjectId.
+      const customerObjectId =
+        typeof r._id === 'string' && mongoose.Types.ObjectId.isValid(r._id)
+          ? new mongoose.Types.ObjectId(r._id)
+          : r._id;
+      ops.push({
+        updateOne: {
+          filter: { _id: customerObjectId, $or: [{ primaryBranchId: { $exists: false } }, { primaryBranchId: null }] },
+          update: { $set: { primaryBranchId: r.soldAtBranchId } },
+        },
+      });
+    }
+
+    const result = await Customer.collection.bulkWrite(ops, { ordered: false });
+    return res.json({ success: true, updated: result.modifiedCount ?? 0 });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Failed to backfill branches.' });
+  }
+});
+
 /**
  * POST /api/customers/bulk-delete
  * Admin-only: deletes selected customers + related documents (appointments + loyalty).
@@ -154,21 +335,37 @@ router.get('/', async (req, res) => {
     // would never fetch beyond the first 500. We allow larger lists; UI should still prefer search for performance.
     // For large imports, we allow up to 50k; default is 20k so big accounts can see most/all customers.
     const limit = limitParam ? Math.min(50000, Math.max(1, parseInt(limitParam, 10))) : 20000;
-    const customers = await Customer.find(filter).populate('primaryBranchId', 'name').sort({ name: 1 }).limit(limit).lean();
-    res.json({
-      success: true,
-      customers: customers.map((c) => ({
+
+    // Some older databases used legacy field names (e.g. customer_name/contact/id).
+    // We sort by both to keep the list stable across mixed data.
+    const customers = await Customer.find(filter)
+      .populate('primaryBranchId', 'name')
+      .sort({ name: 1, customer_name: 1 })
+      .limit(limit)
+      .lean();
+
+    const mapCustomer = (c) => {
+      const name = c.name || c.customer_name || c.customerName || '';
+      const phone = c.phone || c.contact || c.mobile || c.phoneNumber || '';
+      const email = c.email || c.customer_email || c.customerEmail || null;
+      const membershipCardId = c.membershipCardId || c.cardId || c.card_id || c.id || null;
+      return {
         id: c._id,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        membershipCardId: c.membershipCardId,
-        primaryBranch: c.primaryBranchId?.name,
+        name,
+        phone,
+        email,
+        membershipCardId,
+        primaryBranch: c.primaryBranchId?.name || c.primaryBranch || null,
         primaryBranchId: c.primaryBranchId?._id?.toString() || c.primaryBranchId?.toString() || null,
         customerPackage: c.customerPackage,
         customerPackagePrice: c.customerPackagePrice,
         customerPackageExpiry: c.customerPackageExpiry ? c.customerPackageExpiry.toISOString().split('T')[0] : null,
-      })),
+      };
+    };
+
+    res.json({
+      success: true,
+      customers: customers.map(mapCustomer),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch customers.' });
@@ -231,16 +428,20 @@ router.get('/:id', async (req, res) => {
     const customer = await Customer.findById(req.params.id).populate('primaryBranchId', 'name').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
     // Universal: any branch can view any customer
+    const name = customer.name || customer.customer_name || customer.customerName || '';
+    const phone = customer.phone || customer.contact || customer.mobile || customer.phoneNumber || '';
+    const email = customer.email || customer.customer_email || customer.customerEmail || null;
+    const membershipCardId = customer.membershipCardId || customer.cardId || customer.card_id || customer.id || null;
     res.json({
       success: true,
       customer: {
         id: customer._id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-        membershipCardId: customer.membershipCardId,
+        name,
+        phone,
+        email,
+        membershipCardId,
         primaryBranchId: customer.primaryBranchId?._id?.toString() || customer.primaryBranchId?.toString() || null,
-        primaryBranch: customer.primaryBranchId?.name,
+        primaryBranch: customer.primaryBranchId?.name || customer.primaryBranch || null,
         customerPackage: customer.customerPackage,
         customerPackagePrice: customer.customerPackagePrice,
         customerPackageExpiry: customer.customerPackageExpiry ? customer.customerPackageExpiry.toISOString().split('T')[0] : null,

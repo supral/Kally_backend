@@ -21,6 +21,55 @@ async function getDefaultMembershipTypeId() {
   return type._id;
 }
 
+function toNumber(value, fallback = 0) {
+  if (value == null || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+function computeSettlementPerCredit(packagePrice, discountAmount, totalCredits) {
+  const price = toNumber(packagePrice, 0);
+  const discount = toNumber(discountAmount, 0);
+  const credits = Math.max(1, toNumber(totalCredits, 1));
+  // Settlement Amount per credit/session:
+  // (Price of package + Discount) / (2 * No. Of sessions)
+  return (price + discount) / (2 * credits);
+}
+
+function mapLegacyCustomer(c) {
+  if (!c) return null;
+  const name = c.name || c.customer_name || c.customerName || '';
+  const phone = c.phone || c.contact || c.mobile || c.phoneNumber || '';
+  const email = c.email || c.customer_email || c.customerEmail || null;
+  const membershipCardId = c.membershipCardId || c.cardId || c.card_id || c.id || null;
+  return { id: c._id || c.id, name, phone, email, membershipCardId };
+}
+
+function normalizeBranchName(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '');
+}
+
+function parseTotalUsedRemaining(value) {
+  const raw = String(value || '').replace(/\\\//g, '/');
+  const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
+  const total = toNumber(parts[0], 0);
+  const used = toNumber(parts[1], 0);
+  const remaining = toNumber(parts[2], total - used);
+  return {
+    totalCredits: total > 0 ? total : 0,
+    usedCredits: used >= 0 ? used : 0,
+    remainingCredits: Number.isFinite(remaining) ? remaining : Math.max(0, total - used),
+  };
+}
+
 const router = express.Router();
 
 router.use(protect);
@@ -96,33 +145,116 @@ router.get('/', async (req, res) => {
 
     const limit = limitParam ? Math.min(MAX_MEMBERSHIPS_LIMIT, Math.max(1, parseInt(limitParam, 10))) : DEFAULT_MEMBERSHIPS_LIMIT;
     const memberships = await Membership.find(filter)
-      .populate('customerId', 'name phone email membershipCardId')
+      // Include legacy customer fields too (older DBs used customer_name/contact/id).
+      .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
       .populate('membershipTypeId', 'name totalCredits')
       .populate('soldAtBranchId', 'name')
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
 
+    // Legacy memberships (from older PHP/MySQL exports) may store foreign keys as numeric strings:
+    // customer_id, branch_id, package_id, plus optional package_name/package_price.
+    // If those exist, we resolve them by index against current collections (sorted by _id).
+    const needLegacyResolution = memberships.some(
+      (m) =>
+        (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
+        (m.soldAtBranchId == null && (m.branch_id != null || m.sold_at != null || m.soldAt != null)) ||
+        (m.totalCredits == null && (m.package_id != null || m.total_used_remaining != null || m.totalUsedRemaining != null))
+    );
+    let customersByIndex = [];
+    let branchesByIndex = [];
+    let packagesByIndex = [];
+    let branchIdByNormName = new Map();
+    if (needLegacyResolution) {
+      const [customersAll, branchesAll, packagesAll] = await Promise.all([
+        Customer.find({}).select('name phone email membershipCardId customer_name contact id').sort({ _id: 1 }).lean(),
+        Branch.find({}).select('name').sort({ _id: 1 }).lean(),
+        Package.find({}).select('name price totalSessions').sort({ _id: 1 }).lean(),
+      ]);
+      customersByIndex = customersAll;
+      branchesByIndex = branchesAll;
+      packagesByIndex = packagesAll;
+      branchIdByNormName = new Map(
+        branchesAll
+          .map((b) => [normalizeBranchName(b.name), b._id])
+          .filter(([k]) => k)
+      );
+    }
+
+    const resolveLegacy = (m) => {
+      const out = { ...m };
+      // customer
+      if (!out.customerId && out.customer_id != null) {
+        const idx = Math.max(0, parseInt(String(out.customer_id), 10) - 1);
+        const c = customersByIndex[idx];
+        if (c) out.customerId = c;
+      }
+      // soldAt branch
+      if (!out.soldAtBranchId && out.branch_id != null) {
+        const idx = Math.max(0, parseInt(String(out.branch_id), 10) - 1);
+        const b = branchesByIndex[idx];
+        if (b) out.soldAtBranchId = b;
+      }
+      // sold_at branch name (cm.json style)
+      if (!out.soldAtBranchId && (out.sold_at != null || out.soldAt != null || out.sold_at_branch != null)) {
+        const name = out.sold_at || out.soldAt || out.sold_at_branch;
+        const norm = normalizeBranchName(name);
+        const bid = branchIdByNormName.get(norm);
+        if (bid) out.soldAtBranchId = { _id: bid, name };
+        else if (name) out.soldAtBranch = name;
+      }
+      // package
+      if (out.packageName == null && (out.package_name != null || out.packageNameLegacy != null)) {
+        out.packageName = out.package_name || out.packageNameLegacy;
+      }
+      if ((out.totalCredits == null || out.totalCredits === 0) && out.package_id != null) {
+        const idx = Math.max(0, parseInt(String(out.package_id), 10) - 1);
+        const p = packagesByIndex[idx];
+        if (p) {
+          out.totalCredits = p.totalSessions ?? out.totalCredits;
+          out.packageName = out.packageName || p.name;
+          if (out.packagePrice == null && p.price != null) out.packagePrice = p.price;
+        }
+      }
+      // total_used_remaining (cm.json style)
+      if ((out.totalCredits == null || out.usedCredits == null) && (out.total_used_remaining != null || out.totalUsedRemaining != null)) {
+        const parsed = parseTotalUsedRemaining(out.total_used_remaining || out.totalUsedRemaining);
+        if (out.totalCredits == null) out.totalCredits = parsed.totalCredits;
+        if (out.usedCredits == null) out.usedCredits = parsed.usedCredits;
+        if (out.remainingCredits == null) out.remainingCredits = parsed.remainingCredits;
+      }
+      return out;
+    };
+
     res.json({
       success: true,
-      memberships: memberships.map((m) => ({
+      memberships: memberships.map((raw) => {
+        const m = needLegacyResolution ? resolveLegacy(raw) : raw;
+        const totalCredits = toNumber(m.totalCredits, toNumber(m.membershipTypeId?.totalCredits, 0));
+        const usedCredits = toNumber(m.usedCredits, toNumber(m.used_credits, 0));
+        return ({
         id: m._id,
-        customer: m.customerId
-          ? { id: m.customerId._id, name: m.customerId.name, phone: m.customerId.phone, email: m.customerId.email, membershipCardId: m.customerId.membershipCardId }
-          : null,
+        customer: mapLegacyCustomer(m.customerId),
         typeName: m.membershipTypeId?.name,
-        packageName: m.packageName || m.membershipTypeId?.name,
-        totalCredits: m.totalCredits,
-        usedCredits: m.usedCredits,
-        remainingCredits: m.totalCredits - m.usedCredits,
-        soldAtBranch: m.soldAtBranchId?.name,
-        soldAtBranchId: m.soldAtBranchId?._id,
+          packageName: m.packageName || m.package_name || m.package_name_text || m.membershipTypeId?.name,
+        totalCredits,
+        usedCredits,
+          remainingCredits: Math.max(0, toNumber(m.remainingCredits, totalCredits - usedCredits)),
+          soldAtBranch: m.soldAtBranchId?.name || m.soldAtBranch || m.sold_at,
+        soldAtBranchId: m.soldAtBranchId?._id || m.soldAtBranchId,
         purchaseDate: m.purchaseDate,
         expiryDate: m.expiryDate,
-        status: m.status,
+          status: (() => {
+            const s = (m.status || m.membership_status || 'active');
+            const up = String(s).toLowerCase();
+            if (up === 'inactive') return 'expired';
+            return up;
+          })(),
         packagePrice: m.packagePrice,
         discountAmount: m.discountAmount ?? 0,
-      })),
+        });
+      }),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch memberships.' });
@@ -151,6 +283,7 @@ router.post('/', async (req, res) => {
     let settlementAmount;
     const pkg = await Package.findOne({ name: packageName }).lean();
     if (pkg?.settlementAmount != null) settlementAmount = Number(pkg.settlementAmount);
+    else settlementAmount = computeSettlementPerCredit(packagePrice, discount, Number(totalCredits));
     const membership = await Membership.create({
       customerId,
       membershipTypeId: typeId,
@@ -295,7 +428,7 @@ router.post('/import', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const membership = await Membership.findById(req.params.id)
-      .populate('customerId', 'name phone email membershipCardId')
+      .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
       .populate('membershipTypeId', 'name totalCredits serviceCategory')
       .populate('soldAtBranchId', 'name')
       .lean();
@@ -311,11 +444,11 @@ router.get('/:id', async (req, res) => {
       success: true,
       membership: {
         id: membership._id,
-        customer: membership.customerId,
+        customer: mapLegacyCustomer(membership.customerId),
         typeName: membership.membershipTypeId?.name,
-        totalCredits: membership.totalCredits,
-        usedCredits: membership.usedCredits,
-        remainingCredits: membership.totalCredits - membership.usedCredits,
+        totalCredits: toNumber(membership.totalCredits, toNumber(membership.membershipTypeId?.totalCredits, 0)),
+        usedCredits: toNumber(membership.usedCredits, 0),
+        remainingCredits: Math.max(0, toNumber(membership.totalCredits, toNumber(membership.membershipTypeId?.totalCredits, 0)) - toNumber(membership.usedCredits, 0)),
         soldAtBranch: membership.soldAtBranchId?.name,
         soldAtBranchId: membership.soldAtBranchId?._id?.toString(),
         purchaseDate: membership.purchaseDate,
@@ -446,6 +579,7 @@ router.post('/:id/renew', async (req, res) => {
     const expiry = expiryDate ? new Date(expiryDate) : undefined;
 
     const packageName = membership.packageName || membership.membershipTypeId?.name;
+    const settlementAmount = computeSettlementPerCredit(price, 0, credits);
     const newMembership = await Membership.create({
       customerId: membership.customerId,
       membershipTypeId: membership.membershipTypeId._id || membership.membershipTypeId,
@@ -456,6 +590,7 @@ router.post('/:id/renew', async (req, res) => {
       packagePrice: price,
       discountAmount: 0,
       packageName,
+      settlementAmount,
       expiryDate: expiry,
     });
 
@@ -538,18 +673,15 @@ router.post('/:id/use', async (req, res) => {
 
     const soldAtBranchId = membership.soldAtBranchId._id || membership.soldAtBranchId;
     if (String(soldAtBranchId) !== String(usedAtBranchId)) {
-      let amount;
-      if (membership.settlementAmount != null && membership.settlementAmount >= 0) {
-        amount = Math.round(Number(membership.settlementAmount) * toUse * 100) / 100;
-      } else {
-        const settingsDoc = await Settings.findOne().lean();
-        const settlementPercentage = settingsDoc?.settlementPercentage ?? 100;
-        const multiplier = settlementPercentage / 100;
-        const price = membership.membershipTypeId?.price != null ? Number(membership.membershipTypeId.price) : (membership.packagePrice != null ? Number(membership.packagePrice) : 0);
-        const totalCredits = membership.totalCredits || 1;
-        const baseAmount = totalCredits > 0 ? (price / totalCredits) * toUse : 0;
-        amount = Math.round(baseAmount * multiplier * 100) / 100;
-      }
+      const perCredit =
+        membership.settlementAmount != null && membership.settlementAmount >= 0
+          ? Number(membership.settlementAmount)
+          : computeSettlementPerCredit(
+              membership.packagePrice != null ? membership.packagePrice : membership.membershipTypeId?.price,
+              membership.discountAmount,
+              membership.totalCredits
+            );
+      const amount = round2(perCredit * toUse);
       await InternalSettlement.create({
         fromBranchId: soldAtBranchId,
         toBranchId: usedAtBranchId,

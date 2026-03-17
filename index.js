@@ -32,6 +32,14 @@ connectDB();
 
 const app = express();
 app.disable('x-powered-by');
+// Ensure correct client IP detection behind proxies (Render/Railway/Nginx).
+// In local dev this is harmless; in production it's often required for rate limiting to work as intended.
+if (process.env.TRUST_PROXY) {
+  const trustProxy = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isFinite(trustProxy) ? trustProxy : true);
+} else if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 // Security headers: HSTS in production, cross-origin for API
 const helmetOptions = {
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -59,7 +67,19 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 app.use(compression());
-app.use(express.json({ limit: '10mb' }));
+// Support large JSON imports (legacy data). Override with JSON_BODY_LIMIT if needed.
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '50mb' }));
+
+// Handle payload too large / JSON parse errors cleanly.
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({ success: false, message: 'Upload too large. Increase JSON_BODY_LIMIT on the backend.' });
+  }
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, message: 'Invalid JSON body.' });
+  }
+  return next(err);
+});
 
 // Strip $ and . from request data to prevent NoSQL operator injection
 app.use((req, res, next) => {
@@ -76,7 +96,7 @@ const apiLimiter = rateLimit({
   message: { success: false, message: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/health',
+  skip: (req) => process.env.NODE_ENV !== 'production' || req.path === '/api/health',
 });
 app.use('/api', apiLimiter);
 
@@ -87,6 +107,7 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many login attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV !== 'production',
 });
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/vendors', vendorRoutes);
