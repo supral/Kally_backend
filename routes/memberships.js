@@ -456,7 +456,9 @@ router.get('/', async (req, res) => {
     const rx = new RegExp(safeRegex(search), 'i');
 
     const [matchingCustomers, matchingBranches] = await Promise.all([
-      Customer.find({
+      // Use native collection so legacy fields (not in schema) are searchable too.
+      Customer.collection
+        .find({
         $or: [
           { name: rx },
           { customer_name: rx },
@@ -474,10 +476,10 @@ router.get('/', async (req, res) => {
           { id: rx },
         ],
       })
-        .select('_id')
+        .project({ _id: 1 })
         .limit(5000)
-        .lean(),
-      Branch.find({ name: rx }).select('_id').limit(2000).lean(),
+        .toArray(),
+      Branch.collection.find({ name: rx }).project({ _id: 1 }).limit(2000).toArray(),
     ]);
 
     const customerIds = matchingCustomers.map((c) => c._id);
@@ -521,6 +523,57 @@ router.get('/', async (req, res) => {
         .toArray(),
     ]);
     const pages = Math.max(1, Math.ceil(total / limit));
+
+    // Hydrate customer/branch/type docs for returned rows (native collection; supports legacy fields)
+    const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
+    const customerIdStrs = uniq(
+      data
+        .map((m) => (typeof m.customerId === 'string' ? m.customerId : (m.customerId?._bsontype === 'ObjectId' ? String(m.customerId) : null)))
+        .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
+    );
+    const customerObjectIds = customerIdStrs.map((s) => new mongoose.Types.ObjectId(s));
+    const [customerDocs, branchDocs, typeDocs] = await Promise.all([
+      customerObjectIds.length
+        ? Customer.collection
+            .find({ _id: { $in: customerObjectIds } })
+            .project({
+              name: 1,
+              phone: 1,
+              email: 1,
+              membershipCardId: 1,
+              customer_name: 1,
+              customerName: 1,
+              customer_email: 1,
+              customerEmail: 1,
+              contact: 1,
+              mobile: 1,
+              phoneNumber: 1,
+              id: 1,
+              cardId: 1,
+              card_id: 1,
+            })
+            .toArray()
+        : Promise.resolve([]),
+      (() => {
+        const branchIds = uniq(
+          data.map((m) => m.soldAtBranchId).filter((x) => x && x._bsontype === 'ObjectId')
+        );
+        return branchIds.length
+          ? Branch.collection.find({ _id: { $in: branchIds } }).project({ name: 1 }).toArray()
+          : Promise.resolve([]);
+      })(),
+      (() => {
+        const typeIds = uniq(
+          data.map((m) => m.membershipTypeId).filter((x) => x && x._bsontype === 'ObjectId')
+        );
+        return typeIds.length
+          ? MembershipType.collection.find({ _id: { $in: typeIds } }).project({ name: 1, totalCredits: 1 }).toArray()
+          : Promise.resolve([]);
+      })(),
+    ]);
+    const customerByIdHydrate = new Map(customerDocs.map((c) => [String(c._id), c]));
+    const branchByIdHydrate = new Map(branchDocs.map((b) => [String(b._id), b]));
+    const typeByIdHydrate = new Map(typeDocs.map((t) => [String(t._id), t]));
 
     // Legacy memberships (from older PHP/MySQL exports) may store foreign keys as numeric strings:
     // customer_id, branch_id, package_id, plus optional package_name/package_price.
@@ -581,6 +634,22 @@ router.get('/', async (req, res) => {
 
     const resolveLegacy = (m) => {
       const out = { ...m };
+      // Hydrate from lookups when available (ensures customer shows in search results)
+      if (typeof out.customerId === 'string' && mongoose.Types.ObjectId.isValid(out.customerId)) {
+        const c = customerByIdHydrate.get(out.customerId);
+        if (c) out.customerId = c;
+      } else if (out.customerId && out.customerId._bsontype === 'ObjectId') {
+        const c = customerByIdHydrate.get(String(out.customerId));
+        if (c) out.customerId = c;
+      }
+      if (out.soldAtBranchId && out.soldAtBranchId._bsontype === 'ObjectId') {
+        const b = branchByIdHydrate.get(String(out.soldAtBranchId));
+        if (b) out.soldAtBranchId = b;
+      }
+      if (out.membershipTypeId && out.membershipTypeId._bsontype === 'ObjectId') {
+        const t = typeByIdHydrate.get(String(out.membershipTypeId));
+        if (t) out.membershipTypeId = t;
+      }
       // If this row came from the aggregation search pipeline, hydrate the same fields
       // our normal mapping expects (customerId/soldAtBranchId/membershipTypeId).
       if (out.customerDoc && !out.customerId) out.customerId = out.customerDoc;
