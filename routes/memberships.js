@@ -133,8 +133,9 @@ router.get('/', async (req, res) => {
     if (req.user.role === 'admin' && branchId) filter.soldAtBranchId = branchId;
     if (customerId) filter.customerId = customerId;
     // By default, hide fully used memberships from the list, but allow explicit status filter to override.
+    // When searching, include "used" too so search doesn't look broken.
     if (status) filter.status = status;
-    else filter.status = { $ne: 'used' };
+    else if (!searchParam) filter.status = { $ne: 'used' };
     if (dateFrom || dateTo) {
       filter.purchaseDate = {};
       if (dateFrom) filter.purchaseDate.$gte = new Date(dateFrom);
@@ -450,66 +451,75 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // Search mode (uses aggregation so we can match customer + branch names)
+    // Search mode (optimized find + pre-resolve customer/branch matches).
+    // This avoids aggregation pitfalls when legacy memberships store customerId as a string.
     const rx = new RegExp(safeRegex(search), 'i');
-    const match = { ...filter };
 
-    const pipeline = [
-      { $match: match },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: 'customerId',
-          foreignField: '_id',
-          as: 'customerDoc',
-        },
-      },
-      { $unwind: { path: '$customerDoc', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'branches',
-          localField: 'soldAtBranchId',
-          foreignField: '_id',
-          as: 'soldAtBranchDoc',
-        },
-      },
-      { $unwind: { path: '$soldAtBranchDoc', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'membershiptypes',
-          localField: 'membershipTypeId',
-          foreignField: '_id',
-          as: 'typeDoc',
-        },
-      },
-      { $unwind: { path: '$typeDoc', preserveNullAndEmptyArrays: true } },
-      {
-        $match: {
-          $or: [
-            { 'customerDoc.name': rx },
-            { 'customerDoc.phone': rx },
-            { 'customerDoc.email': rx },
-            { 'customerDoc.membershipCardId': rx },
-            { packageName: rx },
-            { package_name: rx },
-            { package_name_text: rx },
-            { status: rx },
-            { 'soldAtBranchDoc.name': rx },
-          ],
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
-          meta: [{ $count: 'total' }],
-        },
-      },
+    const [matchingCustomers, matchingBranches] = await Promise.all([
+      Customer.find({
+        $or: [
+          { name: rx },
+          { customer_name: rx },
+          { customerName: rx },
+          { phone: rx },
+          { contact: rx },
+          { mobile: rx },
+          { phoneNumber: rx },
+          { email: rx },
+          { customer_email: rx },
+          { customerEmail: rx },
+          { membershipCardId: rx },
+          { cardId: rx },
+          { card_id: rx },
+          { id: rx },
+        ],
+      })
+        .select('_id')
+        .limit(5000)
+        .lean(),
+      Branch.find({ name: rx }).select('_id').limit(2000).lean(),
+    ]);
+
+    const customerIds = matchingCustomers.map((c) => c._id);
+    const customerIdStrings = customerIds.map((id) => String(id));
+    const branchIds = matchingBranches.map((b) => b._id);
+
+    const searchOr = [
+      ...(customerIds.length ? [{ customerId: { $in: customerIds } }] : []),
+      ...(customerIdStrings.length ? [{ customerId: { $in: customerIdStrings } }] : []),
+      ...(branchIds.length ? [{ soldAtBranchId: { $in: branchIds } }] : []),
+      // Legacy imports sometimes stored customer info directly on membership rows.
+      { customer: rx },
+      { customer_name: rx },
+      { customerName: rx },
+      { customer_email: rx },
+      { customerEmail: rx },
+      { contact: rx },
+      { mobile: rx },
+      { phone: rx },
+      { phoneNumber: rx },
+      { packageName: rx },
+      { package_name: rx },
+      { package_name_text: rx },
+      { status: rx },
+      { soldAtBranch: rx },
+      { sold_at: rx },
     ];
 
-    const agg = await Membership.aggregate(pipeline);
-    const data = (agg?.[0]?.data || []);
-    const total = agg?.[0]?.meta?.[0]?.total || 0;
+    const searchFilter = { ...filter, $or: searchOr };
+
+    // IMPORTANT: many imported memberships store customerId as a STRING in MongoDB.
+    // Mongoose will cast customerId filters to ObjectId and return 0 results.
+    // Use the native collection for searching so both string and ObjectId values match.
+    const [total, data] = await Promise.all([
+      Membership.collection.countDocuments(searchFilter),
+      Membership.collection
+        .find(searchFilter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray(),
+    ]);
     const pages = Math.max(1, Math.ceil(total / limit));
 
     // Legacy memberships (from older PHP/MySQL exports) may store foreign keys as numeric strings:
@@ -571,6 +581,11 @@ router.get('/', async (req, res) => {
 
     const resolveLegacy = (m) => {
       const out = { ...m };
+      // If this row came from the aggregation search pipeline, hydrate the same fields
+      // our normal mapping expects (customerId/soldAtBranchId/membershipTypeId).
+      if (out.customerDoc && !out.customerId) out.customerId = out.customerDoc;
+      if (out.soldAtBranchDoc && !out.soldAtBranchId) out.soldAtBranchId = out.soldAtBranchDoc;
+      if (out.typeDoc && !out.membershipTypeId) out.membershipTypeId = out.typeDoc;
       // customer
       if (typeof out.customerId === 'string' && customerById.size) {
         const c = customerById.get(out.customerId);
