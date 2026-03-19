@@ -11,6 +11,7 @@
     "seed:admin": "node seeders/seedAdmin.js",
     "seed:lead-statuses": "node seeders/seedLeadStatuses.js",
     "seed:all": "node seeders/seedAdmin.js && node seeders/seedLeadStatuses.js",
+    "migrate:membership-customerid": "node scripts/migrateMembershipCustomerIdToObjectId.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
