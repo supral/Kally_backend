@@ -208,11 +208,20 @@ router.get('/sales-dashboard', async (req, res) => {
   try {
     const { branchId, from, to, serviceCategory, packageName, breakdownPage, breakdownLimit } = req.query;
     const bid = getBranchId(req.user);
+    const toObjectId = (v) => {
+      if (!v) return v;
+      if (v instanceof mongoose.Types.ObjectId) return v;
+      try {
+        return new mongoose.Types.ObjectId(v);
+      } catch {
+        return v;
+      }
+    };
     let branchFilter = {};
-    if (req.user.role === 'admin' && branchId) branchFilter = { soldAtBranchId: branchId };
+    if (req.user.role === 'admin' && branchId) branchFilter = { soldAtBranchId: toObjectId(branchId) };
     else if (req.user.role === 'vendor') {
       if (!bid) branchFilter = { soldAtBranchId: { $in: [] } };
-      else branchFilter = { soldAtBranchId: bid };
+      else branchFilter = { soldAtBranchId: toObjectId(bid) };
     }
 
     const fromDate = from ? new Date(from) : new Date(new Date().setMonth(new Date().getMonth() - 1));
@@ -225,12 +234,18 @@ router.get('/sales-dashboard', async (req, res) => {
     const salesCached = await redisGetJson(salesCacheKey);
     if (salesCached) return res.json(salesCached);
 
-    let breakdownFilter = { ...branchFilter };
+    // Keep breakdown queries bounded by the selected date range.
+    // This prevents expensive `countDocuments()` over the full collection.
+    let breakdownFilter = {
+      ...branchFilter,
+      purchaseDate: { $gte: fromDate, $lte: toDate },
+    };
     if (packageName) {
       const matchingTypes = await MembershipType.find({ name: packageName }).select('_id').lean();
       const typeIds = matchingTypes.map((t) => t._id);
       breakdownFilter = {
         ...branchFilter,
+        purchaseDate: { $gte: fromDate, $lte: toDate },
         $or: [
           { packageName: packageName },
           ...(typeIds.length ? [{ membershipTypeId: { $in: typeIds } }] : []),
@@ -238,15 +253,56 @@ router.get('/sales-dashboard', async (req, res) => {
       };
     }
 
-    const [memberships, allMembershipsForSales, activeMembershipCount, breakdownTotal, breakdownMemberships, settingsDoc] = await Promise.all([
-      Membership.find({
-        ...branchFilter,
-        purchaseDate: { $gte: fromDate, $lte: toDate },
-      })
-        .populate('membershipTypeId', 'name totalCredits price serviceCategory')
-        .populate('soldAtBranchId', 'name')
-        .lean(),
-      Membership.find(branchFilter).select('packagePrice discountAmount membershipTypeId').populate('membershipTypeId', 'price').lean(),
+    const salesBranches = Branch.find({ isActive: true }).select('_id name').lean();
+
+    const chartAggPromise = Membership.aggregate([
+      {
+        $match: {
+          ...branchFilter,
+          purchaseDate: { $gte: fromDate, $lte: toDate },
+        },
+      },
+      {
+        $lookup: {
+          from: 'membershiptypes',
+          localField: 'membershipTypeId',
+          foreignField: '_id',
+          as: 'membershipType',
+        },
+      },
+      { $unwind: '$membershipType' },
+      {
+        $addFields: {
+          effectivePrice: {
+            $subtract: [
+              { $ifNull: ['$packagePrice', '$membershipType.price'] },
+              { $ifNull: ['$discountAmount', 0] },
+            ],
+          },
+          serviceCategoryNorm: { $ifNull: ['$membershipType.serviceCategory', 'Other'] },
+          purchaseDateStr: {
+            $dateToString: { format: '%Y-%m-%d', date: '$purchaseDate', timezone: 'UTC' },
+          },
+        },
+      },
+      {
+        $facet: {
+          totals: [{ $group: { _id: null, totalSales: { $sum: '$effectivePrice' }, totalMemberships: { $sum: 1 } } }],
+          byBranch: [{ $group: { _id: '$soldAtBranchId', sales: { $sum: '$effectivePrice' }, membershipCount: { $sum: 1 } } }],
+          byService: [
+            ...(serviceCategory ? [{ $match: { serviceCategoryNorm: String(serviceCategory) } }] : []),
+            { $group: { _id: '$serviceCategoryNorm', sales: { $sum: '$effectivePrice' } } },
+          ],
+          daily: [
+            { $group: { _id: '$purchaseDateStr', sales: { $sum: '$effectivePrice' } } },
+            { $sort: { _id: 1 } },
+          ],
+        },
+      },
+    ]);
+
+    const [chartAgg, activeMembershipCount, breakdownTotal, breakdownMemberships, settingsDoc, branches] = await Promise.all([
+      chartAggPromise,
       Membership.countDocuments({ ...branchFilter, status: 'active' }),
       Membership.countDocuments(breakdownFilter),
       Membership.find(breakdownFilter)
@@ -257,51 +313,42 @@ router.get('/sales-dashboard', async (req, res) => {
         .limit(limit)
         .lean(),
       Settings.findOne().lean(),
+      salesBranches,
     ]);
 
     const revenuePercentage = settingsDoc?.revenuePercentage ?? 10;
     const revenueMultiplier = revenuePercentage / 100;
 
     const effectivePrice = (m) => (m.packagePrice != null ? Number(m.packagePrice) : (m.membershipTypeId?.price || 0)) - (m.discountAmount ?? 0);
-    let totalSales = 0;
-    allMembershipsForSales.forEach((m) => { totalSales += effectivePrice(m); });
-
-    const byBranchSales = {};
-    const byBranchCount = {};
-    const byServiceSales = {};
-    memberships.forEach((m) => {
-      const price = effectivePrice(m);
-      const bName = m.soldAtBranchId?.name || 'Unknown';
-      byBranchSales[bName] = (byBranchSales[bName] || 0) + price;
-      byBranchCount[bName] = (byBranchCount[bName] || 0) + 1;
-      const cat = m.membershipTypeId?.serviceCategory || 'Other';
-      if (serviceCategory && cat !== serviceCategory) return;
-      byServiceSales[cat] = (byServiceSales[cat] || 0) + price;
-    });
-
+    const facetDoc = chartAgg?.[0] ?? {};
+    const totalsRow = facetDoc.totals?.[0] ?? {};
+    const totalSales = totalsRow.totalSales ?? 0;
+    const totalMemberships = totalsRow.totalMemberships ?? 0;
     const totalRevenue = totalSales * revenueMultiplier;
-    const byBranch = Object.entries(byBranchSales).map(([name, sales]) => ({
-      branch: name,
-      sales: sales,
-      revenue: sales * revenueMultiplier,
-      membershipCount: byBranchCount[name] || 0,
-    }));
-    const byService = Object.entries(byServiceSales).map(([name, sales]) => ({
-      serviceCategory: name,
-      revenue: sales * revenueMultiplier,
+
+    const branchMap = new Map((branches ?? []).map((b) => [String(b._id), b.name]));
+
+    const byBranch = (facetDoc.byBranch ?? []).map((row) => {
+      const idStr = row._id ? String(row._id) : '';
+      const name = branchMap.get(idStr) ?? 'Unknown';
+      const sales = row.sales ?? 0;
+      return {
+        branch: name,
+        sales,
+        revenue: sales * revenueMultiplier,
+        membershipCount: row.membershipCount ?? 0,
+      };
+    });
+
+    const byService = (facetDoc.byService ?? []).map((row) => ({
+      serviceCategory: row._id ?? 'Other',
+      revenue: (row.sales ?? 0) * revenueMultiplier,
     }));
 
-    const byDateSales = {};
-    memberships.forEach((m) => {
-      const price = effectivePrice(m);
-      const dateKey = m.purchaseDate ? new Date(m.purchaseDate).toISOString().slice(0, 10) : null;
-      if (dateKey) {
-        byDateSales[dateKey] = (byDateSales[dateKey] || 0) + price;
-      }
-    });
-    const dailySales = Object.entries(byDateSales)
-      .map(([date, sales]) => ({ date, sales: Math.round(sales * 100) / 100 }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    const dailySales = (facetDoc.daily ?? []).map((row) => ({
+      date: row._id,
+      sales: Math.round((row.sales ?? 0) * 100) / 100,
+    }));
 
     const breakdown = breakdownMemberships.map((m) => {
       const price = effectivePrice(m);
@@ -311,8 +358,6 @@ router.get('/sales-dashboard', async (req, res) => {
         price,
       };
     });
-
-    const branches = await Branch.find({ isActive: true }).lean();
     const salesPayload = {
       success: true,
       from: fromDate,
@@ -328,7 +373,7 @@ router.get('/sales-dashboard', async (req, res) => {
       byBranch,
       byService,
       dailySales,
-      totalMemberships: memberships.length,
+      totalMemberships,
       branches: branches.map((b) => ({ id: b._id, name: b.name })),
     };
     await redisSetJson(salesCacheKey, salesPayload, 60);
