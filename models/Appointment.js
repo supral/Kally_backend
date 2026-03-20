@@ -15,5 +15,7 @@ const appointmentSchema = new mongoose.Schema(
 
 appointmentSchema.index({ branchId: 1, scheduledAt: 1 });
 appointmentSchema.index({ customerId: 1, scheduledAt: 1 });
+// Used by /api/notifications/summary to efficiently find upcoming appointments by status.
+appointmentSchema.index({ branchId: 1, status: 1, scheduledAt: 1 });
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

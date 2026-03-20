@@ -27,5 +27,7 @@ const ticketSchema = new mongoose.Schema(
 ticketSchema.index({ createdByBranchId: 1, createdAt: -1 });
 ticketSchema.index({ targetBranchId: 1, createdAt: -1 });
 ticketSchema.index({ status: 1 });
+// Used by notifications/count endpoints to efficiently check whether a ticket has replies.
+ticketSchema.index({ status: 1, 'replies.0': 1 });
 
 module.exports = mongoose.model('Ticket', ticketSchema);

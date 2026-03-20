@@ -380,22 +380,30 @@ router.get('/', async (req, res) => {
 
     if (searchParam) {
       const safe = searchParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const rx = new RegExp(safe, 'i');
+      const rxText = new RegExp(safe, 'i');
+
+      // Normalize phone queries so "98 76 54", "+977-98..." match stored phone digits.
+      const digitsOnly = searchParam.replace(/[^\d]/g, '');
+      const looksLikePhone = digitsOnly.length >= 3 && !/[a-zA-Z]/.test(searchParam);
+      const rxPhone = looksLikePhone
+        ? new RegExp(String(digitsOnly).split('').join('\\D*'), 'i')
+        : null;
+
       filter.$or = [
-        { name: rx },
-        { customer_name: rx },
-        { customerName: rx },
-        { phone: rx },
-        { contact: rx },
-        { mobile: rx },
-        { phoneNumber: rx },
-        { email: rx },
-        { customer_email: rx },
-        { customerEmail: rx },
-        { membershipCardId: rx },
-        { cardId: rx },
-        { card_id: rx },
-        { id: rx },
+        { name: rxText },
+        { customer_name: rxText },
+        { customerName: rxText },
+        { phone: rxPhone ?? rxText },
+        { contact: rxPhone ?? rxText },
+        { mobile: rxPhone ?? rxText },
+        { phoneNumber: rxPhone ?? rxText },
+        { email: rxText },
+        { customer_email: rxText },
+        { customerEmail: rxText },
+        { membershipCardId: rxText },
+        { cardId: rxText },
+        { card_id: rxText },
+        { id: rxText },
       ];
     }
 
@@ -421,6 +429,68 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch customers.' });
+  }
+});
+
+/**
+ * GET /api/customers/suggest
+ * Lightweight customer suggestions for typeahead UIs.
+ * - Does NOT run countDocuments.
+ * - Returns max `limit` records.
+ */
+router.get('/suggest', async (req, res) => {
+  try {
+    const searchParam = (req.query.search || req.query.q || '').toString().trim();
+    const limitParam = req.query.limit != null ? parseInt(String(req.query.limit), 10) : 20;
+    const limit = Math.min(50, Math.max(1, Number.isFinite(limitParam) ? limitParam : 20));
+
+    let filter = {};
+    if (searchParam) {
+      const safe = searchParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rxText = new RegExp(safe, 'i');
+
+      // Normalize phone queries so "98 76 54", "+977-98..." match stored phone digits.
+      const digitsOnly = searchParam.replace(/[^\d]/g, '');
+      const looksLikePhone = digitsOnly.length >= 3 && !/[a-zA-Z]/.test(searchParam);
+      const rxPhone = looksLikePhone ? new RegExp(String(digitsOnly).split('').join('\\D*'), 'i') : null;
+
+      filter.$or = [
+        { name: rxText },
+        { customer_name: rxText },
+        { customerName: rxText },
+        { phone: rxPhone ?? rxText },
+        { contact: rxPhone ?? rxText },
+        { mobile: rxPhone ?? rxText },
+        { phoneNumber: rxPhone ?? rxText },
+        { email: rxText },
+        { customer_email: rxText },
+        { customerEmail: rxText },
+        { membershipCardId: rxText },
+        { cardId: rxText },
+        { card_id: rxText },
+        { id: rxText },
+      ];
+    }
+
+    const customers = await Customer.find(filter)
+      .populate('primaryBranchId', 'name')
+      .sort({ name: 1, customer_name: 1 })
+      .limit(limit)
+      .lean();
+
+    const mapCustomer = (c) => ({
+      id: c._id,
+      name: c.name || c.customer_name || c.customerName || '',
+      phone: c.phone || c.contact || c.mobile || c.phoneNumber || '',
+      email: c.email || c.customer_email || c.customerEmail || null,
+      primaryBranchId:
+        c.primaryBranchId?._id?.toString() || c.primaryBranchId?.toString() || c.primaryBranchId || null,
+      primaryBranch: c.primaryBranchId?.name || c.primaryBranch || null,
+    });
+
+    res.json({ success: true, customers: customers.map(mapCustomer) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to build customer suggestions.' });
   }
 });
 

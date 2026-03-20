@@ -29,6 +29,32 @@ router.get('/count', async (req, res) => {
   }
 });
 
+/** GET /api/tickets/replies-count - count tickets that have at least one reply */
+router.get('/replies-count', async (req, res) => {
+  try {
+    const bid = getBranchId(req.user);
+    const isAdmin = req.user.role === 'admin';
+
+    let filter = {};
+    if (!isAdmin && bid) {
+      filter.$or = [
+        { createdByBranchId: bid },
+        { targetBranchId: bid },
+        { targetBranchId: null, createdByBranchId: null },
+      ];
+    }
+
+    const repliesCount = await Ticket.countDocuments({
+      ...filter,
+      'replies.0': { $exists: true },
+    });
+
+    res.json({ success: true, repliesCount });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to get replies count.' });
+  }
+});
+
 /** GET /api/tickets - list tickets. Admin: all. Vendor: tickets for their branch */
 router.get('/', async (req, res) => {
   try {
@@ -44,15 +70,59 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    const tickets = await Ticket.find(filter)
-      .populate('createdByUserId', 'name')
-      .populate('createdByBranchId', 'name')
-      .populate('targetBranchId', 'name')
-      .sort({ createdAt: -1 })
-      .lean();
+    const limitParam = req.query.limit != null ? parseInt(String(req.query.limit), 10) : null;
+    const pageParam = req.query.page != null ? parseInt(String(req.query.page), 10) : null;
+    const wantsPagination = limitParam != null || pageParam != null;
 
-    res.json({
+    if (!wantsPagination) {
+      const tickets = await Ticket.find(filter)
+        .populate('createdByUserId', 'name')
+        .populate('createdByBranchId', 'name')
+        .populate('targetBranchId', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return res.json({
+        success: true,
+        tickets: tickets.map((t) => ({
+          id: t._id,
+          subject: t.subject,
+          body: t.body,
+          hasImage: Boolean(t.imageBase64),
+          createdBy: t.createdByUserId?.name,
+          createdByBranch: t.createdByBranchId?.name,
+          targetBranch: t.targetBranchId?.name,
+          status: t.status,
+          replyCount: (t.replies || []).length,
+          createdAt: t.createdAt,
+        })),
+      });
+    }
+
+    const page = Math.max(1, pageParam != null ? pageParam : 1);
+    const limit = Math.min(200, Math.max(1, limitParam != null ? limitParam : 50));
+    const skip = (page - 1) * limit;
+
+    const [total, tickets] = await Promise.all([
+      Ticket.countDocuments(filter),
+      Ticket.find(filter)
+        .populate('createdByUserId', 'name')
+        .populate('createdByBranchId', 'name')
+        .populate('targetBranchId', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const pages = Math.max(1, Math.ceil(total / limit));
+
+    return res.json({
       success: true,
+      page,
+      limit,
+      total,
+      pages,
       tickets: tickets.map((t) => ({
         id: t._id,
         subject: t.subject,

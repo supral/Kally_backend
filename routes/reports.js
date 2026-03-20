@@ -91,12 +91,6 @@ router.get('/branch-dashboard', async (req, res) => {
     const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    // Auto-mark as expired where expiryDate has passed (so vendor sees accurate counts)
-    await Membership.updateMany(
-      { soldAtBranchId: bid, status: 'active', expiryDate: { $exists: true, $lt: todayStart } },
-      { $set: { status: 'expired' } }
-    );
-
     const [allMembershipsForBranch, membershipsInPeriod, todayAppointments, leadsToFollowUp, completedAppointments, usageInBranch, activeMembershipCount, expiredMembershipCount, usedMembershipCount, customersCount, membershipsExpiringSoonList, countExpiring7, countExpiring30] = await Promise.all([
       Membership.find({ soldAtBranchId: bid }).select('packagePrice discountAmount membershipTypeId').populate('membershipTypeId', 'price').lean(),
       Membership.find({ soldAtBranchId: bid, purchaseDate: { $gte: fromDate, $lte: toDate } })
@@ -116,8 +110,23 @@ router.get('/branch-dashboard', async (req, res) => {
       MembershipUsage.find({ usedAtBranchId: bid, usedAt: { $gte: fromDate, $lte: toDate } })
         .populate('membershipId')
         .lean(),
-      Membership.countDocuments({ soldAtBranchId: bid, status: 'active' }),
-      Membership.countDocuments({ soldAtBranchId: bid, status: 'expired' }),
+      // "Active" is derived based on expiryDate without mutating the DB.
+      Membership.countDocuments({
+        soldAtBranchId: bid,
+        status: 'active',
+        $or: [
+          { expiryDate: { $exists: false } },
+          { expiryDate: null },
+          { expiryDate: { $gte: todayStart } },
+        ],
+      }),
+      Membership.countDocuments({
+        soldAtBranchId: bid,
+        $or: [
+          { status: 'expired' },
+          { status: 'active', expiryDate: { $exists: true, $lt: todayStart } },
+        ],
+      }),
       Membership.countDocuments({ soldAtBranchId: bid, status: 'used' }),
       Customer.countDocuments({ primaryBranchId: bid }),
       Membership.find({

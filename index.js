@@ -27,6 +27,7 @@ const salesImageRoutes = require('./routes/salesImages');
 const manualSalesRoutes = require('./routes/manualSales');
 const ticketRoutes = require('./routes/tickets');
 const activityLogRoutes = require('./routes/activityLog');
+const notificationsRoutes = require('./routes/notifications');
 
 connectDB();
 
@@ -129,6 +130,7 @@ app.use('/api/manual-sales', manualSalesRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/activity-log', activityLogRoutes);
 app.use('/api/guidelines', guidelinesRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });

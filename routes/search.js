@@ -14,26 +14,32 @@ router.get('/customers-memberships', async (req, res) => {
       return res.json({ success: true, customers: [], memberships: [] });
     }
     const term = String(q).trim();
-    const isPhone = /^\d+$/.test(term);
+    // Normalize phone searches: allow "+", spaces, "-" etc by matching digits only.
+    const digitsOnly = term.replace(/[^\d]/g, '');
+    // If the user typed a card id like "tes-00001", don't treat it as a phone search.
+    const looksLikePhone = digitsOnly.length >= 3 && !/[a-zA-Z]/.test(term);
     // Universal: all branches can search all customers and memberships
     const customerFilter = {};
 
     // Escape regex special chars to prevent ReDoS
     const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const safePattern = escapeRegex(term);
+    const makeDigitsRegex = (digits) => new RegExp(String(digits).split('').join('\\D*'), 'i');
 
     let customers = [];
-    if (isPhone) {
-      customers = await Customer.find({ ...customerFilter, phone: new RegExp(safePattern, 'i') })
+    if (looksLikePhone) {
+      const phoneRegex = makeDigitsRegex(digitsOnly);
+      customers = await Customer.find({ ...customerFilter, phone: phoneRegex })
         .limit(20)
         .lean();
     } else {
+      const rx = new RegExp(safePattern, 'i');
       customers = await Customer.find({
         ...customerFilter,
         $or: [
-          { name: new RegExp(safePattern, 'i') },
-          { membershipCardId: new RegExp(safePattern, 'i') },
-          { email: new RegExp(safePattern, 'i') },
+          { name: rx },
+          { membershipCardId: rx },
+          { email: rx },
         ],
       })
         .limit(20)

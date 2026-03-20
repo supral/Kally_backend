@@ -8,12 +8,29 @@ const { getBranchId } = require('../middleware/branchFilter');
 const router = express.Router();
 
 const RETENTION_DAYS = 7;
+const PURGE_MIN_INTERVAL_MS = 10 * 60 * 1000; // throttle deletes (only for DB cleanup, not correctness)
+let lastPurgeAt = 0;
 
-async function purgeOldRecords() {
+function getRetentionCutoff() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   cutoff.setHours(0, 0, 0, 0);
+  return cutoff;
+}
+
+async function purgeOldRecords() {
+  const cutoff = getRetentionCutoff();
   await SalesImage.deleteMany({ createdAt: { $lt: cutoff } });
+}
+
+async function maybePurgeOldRecords() {
+  const now = Date.now();
+  if (now - lastPurgeAt < PURGE_MIN_INTERVAL_MS) return;
+  try {
+    await purgeOldRecords();
+  } finally {
+    lastPurgeAt = Date.now();
+  }
 }
 
 async function getSalesCountForBranchDate(branchId, date) {
@@ -35,7 +52,7 @@ router.use(protect);
 /** GET /api/sales-images - list. Admin: all. Vendor: own branch. Purge old, return with sales count */
 router.get('/', async (req, res) => {
   try {
-    await purgeOldRecords();
+    await maybePurgeOldRecords();
 
     const bid = getBranchId(req.user);
     const { branchId } = req.query;
@@ -44,34 +61,121 @@ router.get('/', async (req, res) => {
     else if (req.user.role === 'vendor' && bid) filter.branchId = bid;
     else if (req.user.role === 'vendor') filter.branchId = { $in: [] };
 
+    // Correctness: even if purge is throttled, don't return old records.
+    filter.createdAt = { $gte: getRetentionCutoff() };
+
     const images = await SalesImage.find(filter)
       .populate('branchId', 'name')
       .sort({ date: -1, createdAt: -1 })
       .lean();
 
-    const withCount = await Promise.all(
-      images.map(async (img) => {
-        const computed = await getSalesCountForBranchDate(img.branchId?._id ?? img.branchId, img.date);
-        const salesCount = typeof img.manualSalesCount === 'number' && img.manualSalesCount >= 0 ? img.manualSalesCount : computed;
-        return {
-          id: img._id,
-          title: img.title,
-          description: img.description ?? '',
-          date: img.date,
-          branchId: img.branchId?._id?.toString?.() ?? img.branchId,
-          branchName: img.branchId?.name ?? '—',
-          hasImage: true,
-          salesCount,
-          manualSalesCount: img.manualSalesCount ?? null,
-          salesAmount: img.salesAmount ?? null,
-          createdAt: img.createdAt,
-        };
-      })
+    if (images.length === 0) return res.json({ success: true, images: [] });
+
+    const branchIdObjs = Array.from(
+      new Set(images.map((img) => (img.branchId?._id ? img.branchId._id : img.branchId)).filter(Boolean))
     );
+
+    // Compute manual sales + membership sales counts for all image days in one go.
+    const dates = images.map((img) => new Date(img.date)).filter((d) => !Number.isNaN(d.getTime()));
+    const minTs = Math.min(...dates.map((d) => d.getTime()));
+    const maxTs = Math.max(...dates.map((d) => d.getTime()));
+    const minDate = new Date(minTs);
+    const maxDate = new Date(maxTs);
+    minDate.setUTCHours(0, 0, 0, 0);
+    maxDate.setUTCHours(23, 59, 59, 999);
+
+    const dateToKey = (d) => new Date(d).toISOString().slice(0, 10);
+    const manualAgg = await ManualSale.aggregate([
+      {
+        $match: {
+          branchId: { $in: branchIdObjs },
+          date: { $gte: minDate, $lte: maxDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            branchId: '$branchId',
+            dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const membershipAgg = await Membership.aggregate([
+      {
+        $match: {
+          soldAtBranchId: { $in: branchIdObjs },
+          purchaseDate: { $gte: minDate, $lte: maxDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            branchId: '$soldAtBranchId',
+            dateStr: { $dateToString: { format: '%Y-%m-%d', date: '$purchaseDate' } },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const manualByKey = new Map();
+    for (const row of manualAgg) {
+      const key = `${String(row._id.branchId)}:${row._id.dateStr}`;
+      manualByKey.set(key, row.count);
+    }
+    const membershipByKey = new Map();
+    for (const row of membershipAgg) {
+      const key = `${String(row._id.branchId)}:${row._id.dateStr}`;
+      membershipByKey.set(key, row.count);
+    }
+
+    const withCount = images.map((img) => {
+      const branchIdStr = String(img.branchId?._id ?? img.branchId);
+      const dateKey = dateToKey(img.date);
+      const key = `${branchIdStr}:${dateKey}`;
+      const computed = (manualByKey.get(key) ?? 0) + (membershipByKey.get(key) ?? 0);
+
+      const salesCount =
+        typeof img.manualSalesCount === 'number' && img.manualSalesCount >= 0 ? img.manualSalesCount : computed;
+
+      return {
+        id: img._id,
+        title: img.title,
+        description: img.description ?? '',
+        date: img.date,
+        branchId: img.branchId?._id?.toString?.() ?? img.branchId,
+        branchName: img.branchId?.name ?? '—',
+        hasImage: true,
+        salesCount,
+        manualSalesCount: img.manualSalesCount ?? null,
+        salesAmount: img.salesAmount ?? null,
+        createdAt: img.createdAt,
+      };
+    });
 
     res.json({ success: true, images: withCount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch Sales Data.' });
+  }
+});
+
+/** GET /api/sales-images/count - lightweight count within retention window */
+router.get('/count', async (req, res) => {
+  try {
+    const bid = getBranchId(req.user);
+    const { branchId } = req.query;
+
+    const filter = { createdAt: { $gte: getRetentionCutoff() } };
+    if (req.user.role === 'admin' && branchId) filter.branchId = branchId;
+    else if (req.user.role === 'vendor' && bid) filter.branchId = bid;
+    else if (req.user.role === 'vendor') filter.branchId = { $in: [] };
+
+    const count = await SalesImage.countDocuments(filter);
+    res.json({ success: true, count });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to count Sales Data.' });
   }
 });
 

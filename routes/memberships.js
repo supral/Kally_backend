@@ -453,33 +453,36 @@ router.get('/', async (req, res) => {
 
     // Search mode (optimized find + pre-resolve customer/branch matches).
     // This avoids aggregation pitfalls when legacy memberships store customerId as a string.
-    const rx = new RegExp(safeRegex(search), 'i');
+    const rxText = new RegExp(safeRegex(search), 'i');
+    const digitsOnly = search.replace(/[^\d]/g, '');
+    const looksLikePhone = digitsOnly.length >= 3 && !/[a-zA-Z]/.test(search);
+    const rxPhone = looksLikePhone ? new RegExp(String(digitsOnly).split('').join('\\D*'), 'i') : null;
 
     const [matchingCustomers, matchingBranches] = await Promise.all([
       // Use native collection so legacy fields (not in schema) are searchable too.
       Customer.collection
         .find({
         $or: [
-          { name: rx },
-          { customer_name: rx },
-          { customerName: rx },
-          { phone: rx },
-          { contact: rx },
-          { mobile: rx },
-          { phoneNumber: rx },
-          { email: rx },
-          { customer_email: rx },
-          { customerEmail: rx },
-          { membershipCardId: rx },
-          { cardId: rx },
-          { card_id: rx },
-          { id: rx },
+          { name: rxText },
+          { customer_name: rxText },
+          { customerName: rxText },
+          { phone: rxPhone ?? rxText },
+          { contact: rxPhone ?? rxText },
+          { mobile: rxPhone ?? rxText },
+          { phoneNumber: rxPhone ?? rxText },
+          { email: rxText },
+          { customer_email: rxText },
+          { customerEmail: rxText },
+          { membershipCardId: rxText },
+          { cardId: rxText },
+          { card_id: rxText },
+          { id: rxText },
         ],
       })
         .project({ _id: 1 })
         .limit(5000)
         .toArray(),
-      Branch.collection.find({ name: rx }).project({ _id: 1 }).limit(2000).toArray(),
+      Branch.collection.find({ name: rxText }).project({ _id: 1 }).limit(2000).toArray(),
     ]);
 
     const customerIds = matchingCustomers.map((c) => c._id);
@@ -491,21 +494,21 @@ router.get('/', async (req, res) => {
       ...(customerIdStrings.length ? [{ customerId: { $in: customerIdStrings } }] : []),
       ...(branchIds.length ? [{ soldAtBranchId: { $in: branchIds } }] : []),
       // Legacy imports sometimes stored customer info directly on membership rows.
-      { customer: rx },
-      { customer_name: rx },
-      { customerName: rx },
-      { customer_email: rx },
-      { customerEmail: rx },
-      { contact: rx },
-      { mobile: rx },
-      { phone: rx },
-      { phoneNumber: rx },
-      { packageName: rx },
-      { package_name: rx },
-      { package_name_text: rx },
-      { status: rx },
-      { soldAtBranch: rx },
-      { sold_at: rx },
+      { customer: rxText },
+      { customer_name: rxText },
+      { customerName: rxText },
+      { customer_email: rxText },
+      { customerEmail: rxText },
+      { contact: rxPhone ?? rxText },
+      { mobile: rxPhone ?? rxText },
+      { phone: rxPhone ?? rxText },
+      { phoneNumber: rxPhone ?? rxText },
+      { packageName: rxText },
+      { package_name: rxText },
+      { package_name_text: rxText },
+      { status: rxText },
+      { soldAtBranch: rxText },
+      { sold_at: rxText },
     ];
 
     const searchFilter = { ...filter, $or: searchOr };
@@ -578,11 +581,15 @@ router.get('/', async (req, res) => {
     // Legacy memberships (from older PHP/MySQL exports) may store foreign keys as numeric strings:
     // customer_id, branch_id, package_id, plus optional package_name/package_price.
     // If those exist, we resolve them by index against current collections (sorted by _id).
+    // In search mode we query via native collections, so customerId/soldAtBranchId/typeId are usually ObjectIds.
+    // Ensure resolveLegacy() runs so we hydrate those ObjectIds into actual docs for display.
     const needLegacyResolution = data.some(
       (m) =>
         (m.customerId == null && (m.customer_id != null || m.customerIdLegacy != null)) ||
         (typeof m.customerId === 'string' && m.customerId) ||
+        (m.customerId && m.customerId._bsontype === 'ObjectId') ||
         (m.soldAtBranchId == null && (m.branch_id != null || m.sold_at != null || m.soldAt != null)) ||
+        (m.soldAtBranchId && m.soldAtBranchId._bsontype === 'ObjectId') ||
         (m.totalCredits == null && (m.package_id != null || m.total_used_remaining != null || m.totalUsedRemaining != null))
     );
     let customersByIndex = [];
