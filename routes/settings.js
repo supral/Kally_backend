@@ -47,6 +47,10 @@ function toNumber(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function round2(v) {
+  return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+}
+
 function cleanPhone(s) {
   return String(s || '').replace(/[^\d+]/g, '').trim();
 }
@@ -130,6 +134,12 @@ router.post('/import-legacy-data', async (req, res) => {
     }
 
     const BATCH_SIZE = 1000;
+    const LEGACY_SETTLEMENT_REASON_PREFIX = 'Legacy membership import';
+
+    // Ensure re-importing the same legacy file doesn't keep duplicating settlement rows.
+    await InternalSettlement.deleteMany({
+      reason: { $regex: `^${LEGACY_SETTLEMENT_REASON_PREFIX}` },
+    });
 
     // 1) Branches (by name)
     const branchNames = new Set();
@@ -276,6 +286,7 @@ router.post('/import-legacy-data', async (req, res) => {
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
       const ops = [];
+      const legacyInternalSettlementDocs = [];
 
       for (const r of batch) {
         const legacyCustomerId = String(r.customer_id || '').trim();
@@ -341,11 +352,36 @@ router.post('/import-legacy-data', async (req, res) => {
             upsert: true,
           },
         });
+
+        // Legacy exports also contain settlement_amount + used_sessions, but the app's
+        // Settlement page reads from InternalSettlement. Create InternalSettlement docs
+        // so the settlement UI reflects the imported data.
+        if (
+          typeof settlementAmount === 'number'
+          && Number.isFinite(settlementAmount)
+          && cappedUsed > 0
+          && soldAtBranchId
+        ) {
+          const amount = round2(settlementAmount * cappedUsed);
+          if (amount > 0) {
+            legacyInternalSettlementDocs.push({
+              fromBranchId: soldAtBranchId,
+              toBranchId: soldAtBranchId,
+              amount,
+              reason: `${LEGACY_SETTLEMENT_REASON_PREFIX}: ${r.membership_id || r.membershipId || 'membership'} - ${pkgName} - ${cappedUsed} credit(s)`,
+              status: 'pending',
+            });
+          }
+        }
       }
 
       if (ops.length) {
         const result = await Membership.collection.bulkWrite(ops, { ordered: false });
         membershipsUpserted += (result.upsertedCount || 0) + (result.modifiedCount || 0);
+      }
+
+      if (legacyInternalSettlementDocs.length) {
+        await InternalSettlement.collection.insertMany(legacyInternalSettlementDocs, { ordered: false });
       }
     }
 
