@@ -298,9 +298,27 @@ router.post('/import-legacy-data', async (req, res) => {
         const purchaseDate = purchaseDateStr ? new Date(purchaseDateStr.replace(' ', 'T') + 'Z') : new Date();
         const price = toNumber(r.price, 0);
         const discountAmount = Math.max(0, toNumber(r.discount, 0));
+        const settlementAmount = r.settlement_amount != null || r.settlementAmount != null
+          ? Math.max(0, toNumber(r.settlement_amount ?? r.settlementAmount, 0))
+          : undefined;
 
         const cappedUsed = Math.min(usedCredits, totalCredits);
-        const status = cappedUsed >= totalCredits ? 'used' : (remainingCredits <= 0 ? 'used' : 'active');
+
+        // Optional legacy status override (we still keep the computed fallback based on credits).
+        // Expected legacy values might be numeric (0/1/2) or strings (active/used/expired).
+        const legacyStatusRaw = r.status ?? r.membership_status ?? r.membershipStatus;
+        const computedStatus = (cappedUsed >= totalCredits) ? 'used' : (remainingCredits <= 0 ? 'used' : 'active');
+        let importedStatus;
+        if (legacyStatusRaw != null && legacyStatusRaw !== '') {
+          if (typeof legacyStatusRaw === 'number' || /^[0-9]+$/.test(String(legacyStatusRaw))) {
+            const n = Number(legacyStatusRaw);
+            importedStatus = n === 0 ? 'active' : (n === 1 ? 'used' : (n === 2 ? 'expired' : undefined));
+          } else {
+            const s = String(legacyStatusRaw).trim().toLowerCase();
+            importedStatus = (s === 'active' || s === 'used' || s === 'expired') ? s : undefined;
+          }
+        }
+        const status = importedStatus ?? computedStatus;
 
         ops.push({
           updateOne: {
@@ -317,6 +335,7 @@ router.post('/import-legacy-data', async (req, res) => {
                 packageName: pkgName,
                 packagePrice: price,
                 discountAmount,
+                ...(typeof settlementAmount === 'number' ? { settlementAmount } : {}),
               },
             },
             upsert: true,
