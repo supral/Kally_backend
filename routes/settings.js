@@ -496,6 +496,7 @@ router.get('/', async (req, res) => {
           showAdminNotificationComments: doc.showAdminNotificationComments !== false,
           showAdminNotificationSalesData: doc.showAdminNotificationSalesData !== false,
           showImportButton: doc.showImportButton !== false,
+          showExportButton: doc.showExportButton !== false,
           showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
           showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
           showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
@@ -509,7 +510,7 @@ router.get('/', async (req, res) => {
         },
       });
     }
-    // Non-admin: only return fields they are allowed to see (vendor experience + notification bell + import)
+    // Non-admin: only return fields they are allowed to see (vendor experience + notification bell + import/export)
     return res.json({
       success: true,
       settings: {
@@ -521,6 +522,7 @@ router.get('/', async (req, res) => {
         showNotificationComments: doc.showNotificationComments !== false,
         showNotificationSalesData: doc.showNotificationSalesData !== false,
         showImportButton: doc.showImportButton !== false,
+        showExportButton: doc.showExportButton !== false,
         showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
         showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
         showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
@@ -561,6 +563,7 @@ router.patch('/', async (req, res) => {
       showAdminNotificationComments,
       showAdminNotificationSalesData,
       showImportButton,
+      showExportButton,
       showCustomerDeleteToAdmin,
       showCustomerDeleteToVendor,
       showCustomerDeleteToStaff,
@@ -627,6 +630,9 @@ router.patch('/', async (req, res) => {
     if (typeof showImportButton === 'boolean') {
       update.showImportButton = showImportButton;
     }
+    if (typeof showExportButton === 'boolean') {
+      update.showExportButton = showExportButton;
+    }
     if (typeof showCustomerDeleteToAdmin === 'boolean') {
       update.showCustomerDeleteToAdmin = showCustomerDeleteToAdmin;
     }
@@ -681,6 +687,7 @@ router.patch('/', async (req, res) => {
         showAdminNotificationComments: doc.showAdminNotificationComments !== false,
         showAdminNotificationSalesData: doc.showAdminNotificationSalesData !== false,
         showImportButton: doc.showImportButton !== false,
+        showExportButton: doc.showExportButton !== false,
         showCustomerDeleteToAdmin: doc.showCustomerDeleteToAdmin !== false,
         showCustomerDeleteToVendor: doc.showCustomerDeleteToVendor !== false,
         showCustomerDeleteToStaff: doc.showCustomerDeleteToStaff !== false,
