@@ -11,6 +11,7 @@ const Settings = require('../models/Settings');
 const { protect } = require('../middleware/auth');
 const { createActivityLog } = require('../utils/activityLog');
 const { validateBulkIds } = require('../utils/validateBulkIds');
+const { mapCustomerDocToApi } = require('../utils/customerNormalize');
 
 /** Generate next card ID for a branch: prefix (first 3 letters of branch name) + 5-digit sequence, e.g. tes-00001 */
 async function generateCardId(primaryBranchId) {
@@ -329,7 +330,14 @@ router.get('/', async (req, res) => {
     const limitParam = req.query.limit;
     const searchParam = (req.query.search || req.query.q || '').toString().trim();
 
-    const wantsPaging = !forDropdown && (pageParam != null || limitParam != null || searchParam.length > 0 || (req.user.role === 'admin' && branchIdQuery));
+    // Only use offset paging when `page` is present, or search/branch filter needs it.
+    // Passing `limit` alone (e.g. ?limit=20000 for membership dropdowns) must NOT force paging — that path
+    // incorrectly capped at 500 rows and hid newer customers from the create-membership picker.
+    const wantsPaging =
+      !forDropdown &&
+      (String(pageParam || '').trim() !== '' ||
+        searchParam.length > 0 ||
+        (req.user.role === 'admin' && branchIdQuery));
     let filter = {};
     if (!forDropdown && req.user.role === 'admin' && branchIdQuery) {
       filter = { primaryBranchId: branchIdQuery };
@@ -340,27 +348,6 @@ router.get('/', async (req, res) => {
     // For large imports, we allow up to 50k; default is 20k so big accounts can see most/all customers.
     const limit = limitParam ? Math.min(50000, Math.max(1, parseInt(limitParam, 10))) : 20000;
 
-    // Some older databases used legacy field names (e.g. customer_name/contact/id).
-    // We sort by both to keep the list stable across mixed data.
-    const mapCustomer = (c) => {
-      const name = c.name || c.customer_name || c.customerName || '';
-      const phone = c.phone || c.contact || c.mobile || c.phoneNumber || '';
-      const email = c.email || c.customer_email || c.customerEmail || null;
-      const membershipCardId = c.membershipCardId || c.cardId || c.card_id || c.id || null;
-      return {
-        id: c._id,
-        name,
-        phone,
-        email,
-        membershipCardId,
-        primaryBranch: c.primaryBranchId?.name || c.primaryBranch || null,
-        primaryBranchId: c.primaryBranchId?._id?.toString() || c.primaryBranchId?.toString() || null,
-        customerPackage: c.customerPackage,
-        customerPackagePrice: c.customerPackagePrice,
-        customerPackageExpiry: c.customerPackageExpiry ? c.customerPackageExpiry.toISOString().split('T')[0] : null,
-      };
-    };
-
     if (!wantsPaging) {
       const customers = await Customer.find(filter)
         .populate('primaryBranchId', 'name')
@@ -370,7 +357,7 @@ router.get('/', async (req, res) => {
 
       return res.json({
         success: true,
-        customers: customers.map(mapCustomer),
+        customers: customers.map((c) => mapCustomerDocToApi(c)).filter(Boolean),
       });
     }
 
@@ -393,10 +380,12 @@ router.get('/', async (req, res) => {
         { name: rxText },
         { customer_name: rxText },
         { customerName: rxText },
+        { customer: rxText },
         { phone: rxPhone ?? rxText },
         { contact: rxPhone ?? rxText },
         { mobile: rxPhone ?? rxText },
         { phoneNumber: rxPhone ?? rxText },
+        { contact_no: rxPhone ?? rxText },
         { email: rxText },
         { customer_email: rxText },
         { customerEmail: rxText },
@@ -425,7 +414,7 @@ router.get('/', async (req, res) => {
       limit: pagedLimit,
       total,
       pages,
-      customers: customers.map(mapCustomer),
+      customers: customers.map((c) => mapCustomerDocToApi(c)).filter(Boolean),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch customers.' });
@@ -442,7 +431,7 @@ router.get('/suggest', async (req, res) => {
   try {
     const searchParam = (req.query.search || req.query.q || '').toString().trim();
     const limitParam = req.query.limit != null ? parseInt(String(req.query.limit), 10) : 20;
-    const limit = Math.min(50, Math.max(1, Number.isFinite(limitParam) ? limitParam : 20));
+    const limit = Math.min(100, Math.max(1, Number.isFinite(limitParam) ? limitParam : 20));
 
     let filter = {};
     if (searchParam) {
@@ -458,10 +447,12 @@ router.get('/suggest', async (req, res) => {
         { name: rxText },
         { customer_name: rxText },
         { customerName: rxText },
+        { customer: rxText },
         { phone: rxPhone ?? rxText },
         { contact: rxPhone ?? rxText },
         { mobile: rxPhone ?? rxText },
         { phoneNumber: rxPhone ?? rxText },
+        { contact_no: rxPhone ?? rxText },
         { email: rxText },
         { customer_email: rxText },
         { customerEmail: rxText },
@@ -478,17 +469,19 @@ router.get('/suggest', async (req, res) => {
       .limit(limit)
       .lean();
 
-    const mapCustomer = (c) => ({
-      id: c._id,
-      name: c.name || c.customer_name || c.customerName || '',
-      phone: c.phone || c.contact || c.mobile || c.phoneNumber || '',
-      email: c.email || c.customer_email || c.customerEmail || null,
-      primaryBranchId:
-        c.primaryBranchId?._id?.toString() || c.primaryBranchId?.toString() || c.primaryBranchId || null,
-      primaryBranch: c.primaryBranchId?.name || c.primaryBranch || null,
+    const mapped = customers.map((c) => mapCustomerDocToApi(c)).filter(Boolean);
+    res.json({
+      success: true,
+      customers: mapped.map((row) => ({
+        id: row.id,
+        name: row.name,
+        phone: row.phone,
+        email: row.email,
+        membershipCardId: row.membershipCardId,
+        primaryBranchId: row.primaryBranchId,
+        primaryBranch: row.primaryBranch,
+      })),
     });
-
-    res.json({ success: true, customers: customers.map(mapCustomer) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to build customer suggestions.' });
   }
@@ -525,17 +518,7 @@ router.post('/', async (req, res) => {
     }).catch(() => {});
     res.status(201).json({
       success: true,
-      customer: {
-        id: c._id,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        membershipCardId: c.membershipCardId,
-        primaryBranch: c.primaryBranchId?.name,
-        customerPackage: c.customerPackage,
-        customerPackagePrice: c.customerPackagePrice,
-        customerPackageExpiry: c.customerPackageExpiry ? c.customerPackageExpiry.toISOString().split('T')[0] : null,
-      },
+      customer: mapCustomerDocToApi(c),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to create customer.' });
@@ -550,26 +533,9 @@ router.get('/:id', async (req, res) => {
     const customer = await Customer.findById(req.params.id).populate('primaryBranchId', 'name').lean();
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
     // Universal: any branch can view any customer
-    const name = customer.name || customer.customer_name || customer.customerName || '';
-    const phone = customer.phone || customer.contact || customer.mobile || customer.phoneNumber || '';
-    const email = customer.email || customer.customer_email || customer.customerEmail || null;
-    const membershipCardId = customer.membershipCardId || customer.cardId || customer.card_id || customer.id || null;
     res.json({
       success: true,
-      customer: {
-        id: customer._id,
-        name,
-        phone,
-        email,
-        membershipCardId,
-        primaryBranchId: customer.primaryBranchId?._id?.toString() || customer.primaryBranchId?.toString() || null,
-        primaryBranch: customer.primaryBranchId?.name || customer.primaryBranch || null,
-        customerPackage: customer.customerPackage,
-        customerPackagePrice: customer.customerPackagePrice,
-        customerPackageExpiry: customer.customerPackageExpiry ? customer.customerPackageExpiry.toISOString().split('T')[0] : null,
-        notes: customer.notes,
-        createdAt: customer.createdAt,
-      },
+      customer: mapCustomerDocToApi(customer, { includeNotes: true, includeCreatedAt: true }),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to fetch customer.' });
@@ -670,19 +636,7 @@ router.patch('/:id', async (req, res) => {
     }).catch(() => {});
     res.json({
       success: true,
-      customer: {
-        id: customer._id,
-        name: customer.name,
-        phone: customer.phone,
-        email: customer.email,
-        membershipCardId: customer.membershipCardId,
-        primaryBranchId: customer.primaryBranchId?._id?.toString() || customer.primaryBranchId?.toString() || null,
-        primaryBranch: customer.primaryBranchId?.name,
-        customerPackage: customer.customerPackage,
-        customerPackagePrice: customer.customerPackagePrice,
-        customerPackageExpiry: customer.customerPackageExpiry ? customer.customerPackageExpiry.toISOString().split('T')[0] : null,
-        notes: customer.notes,
-      },
+      customer: mapCustomerDocToApi(customer, { includeNotes: true }),
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to update customer.' });

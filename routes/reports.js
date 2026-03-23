@@ -437,14 +437,22 @@ router.get('/settlements', async (req, res) => {
   }
 });
 
-/** PATCH /api/reports/settlements/:id - mark settlement as settled (admin only) */
+/** PATCH /api/reports/settlements/:id - mark settlement as settled (admin or vendor for their branch) */
 router.patch('/settlements/:id', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Only admin can update settlement status.' });
-    }
     const settlement = await InternalSettlement.findById(req.params.id);
     if (!settlement) return res.status(404).json({ success: false, message: 'Settlement not found.' });
+
+    if (req.user.role !== 'admin') {
+      const bid = getBranchId(req.user);
+      if (!bid) return res.status(403).json({ success: false, message: 'Vendor must have a branch to update settlements.' });
+      const fromMatch = String(settlement.fromBranchId) === String(bid);
+      const toMatch = String(settlement.toBranchId) === String(bid);
+      if (!fromMatch && !toMatch) {
+        return res.status(403).json({ success: false, message: 'You can only mark settlements involving your branch as settled.' });
+      }
+    }
+
     const { status } = req.body;
     if (status === 'settled') {
       settlement.status = 'settled';
