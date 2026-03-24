@@ -456,6 +456,7 @@ router.get('/', async (req, res) => {
           showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
           showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
           showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+          showMarkSettledToVendor: doc.showMarkSettledToVendor === true,
           showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
           showEditDeleteActionsToVendor: vendorEditDeleteEnabled,
           showServiceActionsToVendor: vendorServiceActionsEnabled,
@@ -483,6 +484,7 @@ router.get('/', async (req, res) => {
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+        showMarkSettledToVendor: doc.showMarkSettledToVendor === true,
         showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
         showEditDeleteActionsToVendor: vendorEditDeleteEnabled,
         showServiceActionsToVendor: vendorServiceActionsEnabled,
@@ -525,6 +527,7 @@ router.patch('/', async (req, res) => {
       showBulkDeletePackagesToAdmin,
       showBulkDeleteMembershipsToAdmin,
       showBulkSettleSettlementsToAdmin,
+      showMarkSettledToVendor,
       showPackageActionsToVendor,
       showEditDeleteActionsToVendor,
       showServiceActionsToVendor,
@@ -611,6 +614,9 @@ router.patch('/', async (req, res) => {
     if (typeof showBulkSettleSettlementsToAdmin === 'boolean') {
       update.showBulkSettleSettlementsToAdmin = showBulkSettleSettlementsToAdmin;
     }
+    if (typeof showMarkSettledToVendor === 'boolean') {
+      update.showMarkSettledToVendor = showMarkSettledToVendor;
+    }
     if (typeof showPackageActionsToVendor === 'boolean') {
       update.showPackageActionsToVendor = showPackageActionsToVendor;
     }
@@ -661,6 +667,7 @@ router.patch('/', async (req, res) => {
         showBulkDeletePackagesToAdmin: doc.showBulkDeletePackagesToAdmin === true,
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
+        showMarkSettledToVendor: doc.showMarkSettledToVendor === true,
         showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
         showEditDeleteActionsToVendor: resolvedVendorEditDeleteEnabled,
         showServiceActionsToVendor: resolvedVendorServiceActionsEnabled,

@@ -19,9 +19,6 @@ router.use(protect);
 /** PATCH /api/reports/settlements/bulk-settle - mark multiple settlements as settled */
 router.patch('/settlements/bulk-settle', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Admin only.' });
-    }
     const { ids } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, message: 'No settlement IDs provided.' });
@@ -38,8 +35,35 @@ router.patch('/settlements/bulk-settle', async (req, res) => {
     if (objectIds.length === 0) {
       return res.status(400).json({ success: false, message: 'No valid settlement IDs provided.' });
     }
+
+    if (req.user.role === 'admin') {
+      const result = await InternalSettlement.updateMany(
+        { _id: { $in: objectIds }, status: { $ne: 'settled' } },
+        { $set: { status: 'settled' } }
+      );
+      return res.json({ success: true, updated: result.modifiedCount ?? 0 });
+    }
+
+    if (req.user.role !== 'vendor') {
+      return res.status(403).json({ success: false, message: 'Not allowed.' });
+    }
+    const settingsDoc = await Settings.findOne().lean();
+    if (settingsDoc?.showMarkSettledToVendor !== true) {
+      return res.status(403).json({
+        success: false,
+        message: 'Mark settled is not enabled for vendors. Ask an admin to turn it on in Settings.',
+      });
+    }
+    const bid = getBranchId(req.user);
+    if (!bid) {
+      return res.status(403).json({ success: false, message: 'No branch assigned to your account.' });
+    }
     const result = await InternalSettlement.updateMany(
-      { _id: { $in: objectIds }, status: { $ne: 'settled' } },
+      {
+        _id: { $in: objectIds },
+        status: { $ne: 'settled' },
+        $or: [{ fromBranchId: bid }, { toBranchId: bid }],
+      },
       { $set: { status: 'settled' } }
     );
     return res.json({ success: true, updated: result.modifiedCount ?? 0 });
@@ -383,14 +407,39 @@ router.get('/settlements', async (req, res) => {
   }
 });
 
-/** PATCH /api/reports/settlements/:id - mark settlement as settled (admin only) */
+/** PATCH /api/reports/settlements/:id - mark settlement as settled (admin, or vendor when setting allows and branch matches) */
 router.patch('/settlements/:id', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Only admin can update settlement status.' });
-    }
     const settlement = await InternalSettlement.findById(req.params.id);
     if (!settlement) return res.status(404).json({ success: false, message: 'Settlement not found.' });
+
+    if (req.user.role === 'admin') {
+      /* allowed */
+    } else if (req.user.role === 'vendor') {
+      const settingsDoc = await Settings.findOne().lean();
+      if (settingsDoc?.showMarkSettledToVendor !== true) {
+        return res.status(403).json({
+          success: false,
+          message: 'Mark settled is not enabled for vendors. Ask an admin to turn it on in Settings.',
+        });
+      }
+      const bid = getBranchId(req.user);
+      if (!bid) {
+        return res.status(403).json({ success: false, message: 'No branch assigned to your account.' });
+      }
+      const b = String(bid);
+      const fromId = settlement.fromBranchId ? String(settlement.fromBranchId) : '';
+      const toId = settlement.toBranchId ? String(settlement.toBranchId) : '';
+      if (fromId !== b && toId !== b) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only mark settled for entries that involve your branch.',
+        });
+      }
+    } else {
+      return res.status(403).json({ success: false, message: 'Not allowed to update settlement status.' });
+    }
+
     const { status } = req.body;
     if (status === 'settled') {
       settlement.status = 'settled';

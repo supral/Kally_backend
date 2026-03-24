@@ -188,9 +188,18 @@ router.post('/', authorize('admin', 'vendor'), async (req, res) => {
   }
 });
 
-/** PATCH /api/packages/:id - update (admin only) */
-router.patch('/:id', authorize('admin'), async (req, res) => {
+/** PATCH /api/packages/:id - update (admin; vendor when showPackageActionsToVendor is true) */
+router.patch('/:id', authorize('admin', 'vendor'), async (req, res) => {
   try {
+    if (req.user.role === 'vendor') {
+      const settingsDoc = await Settings.findOne().lean();
+      if (settingsDoc?.showPackageActionsToVendor !== true) {
+        return res.status(403).json({
+          success: false,
+          message: 'Package editing is disabled for vendors. Ask an admin to enable “Packages – vendor actions” in Settings.',
+        });
+      }
+    }
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: 'Invalid ID.' });
@@ -230,9 +239,18 @@ router.patch('/:id', authorize('admin'), async (req, res) => {
   }
 });
 
-/** DELETE /api/packages/:id - soft delete (admin only) */
-router.delete('/:id', authorize('admin'), async (req, res) => {
+/** DELETE /api/packages/:id - soft delete (admin; vendor when showPackageActionsToVendor is true) */
+router.delete('/:id', authorize('admin', 'vendor'), async (req, res) => {
   try {
+    if (req.user.role === 'vendor') {
+      const settingsDoc = await Settings.findOne().lean();
+      if (settingsDoc?.showPackageActionsToVendor !== true) {
+        return res.status(403).json({
+          success: false,
+          message: 'Package delete is disabled for vendors. Ask an admin to enable “Packages – vendor actions” in Settings.',
+        });
+      }
+    }
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: 'Invalid ID.' });

@@ -328,8 +328,11 @@ router.get('/', async (req, res) => {
     const pageParam = req.query.page;
     const limitParam = req.query.limit;
     const searchParam = (req.query.search || req.query.q || '').toString().trim();
-
-    const wantsPaging = !forDropdown && (pageParam != null || limitParam != null || searchParam.length > 0 || (req.user.role === 'admin' && branchIdQuery));
+    // Only use the capped (500/req) paging path when the client asks for a page index or server-side search.
+    // Passing ?limit=20000 alone must hit the non-paged branch — otherwise only the first 500 customers load
+    // and dropdowns / membership create flow break for everyone else (sorted by name).
+    const pageExplicit = pageParam != null && String(pageParam).trim() !== '';
+    const wantsPaging = !forDropdown && (searchParam.length > 0 || pageExplicit);
     let filter = {};
     if (!forDropdown && req.user.role === 'admin' && branchIdQuery) {
       filter = { primaryBranchId: branchIdQuery };
