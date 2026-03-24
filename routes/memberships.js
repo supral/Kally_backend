@@ -50,6 +50,19 @@ function mapLegacyCustomer(c) {
   return { id: c._id || c.id, name, phone, email, membershipCardId };
 }
 
+/** Native collection rows may store customerId as string, BSON ObjectId, or mongoose ObjectId — normalize for lookups. */
+function rawMembershipCustomerIdToString(customerId) {
+  if (customerId == null) return null;
+  if (typeof customerId === 'string' && mongoose.Types.ObjectId.isValid(customerId)) return customerId;
+  if (customerId instanceof mongoose.Types.ObjectId) return String(customerId);
+  if (customerId._bsontype === 'ObjectId') return String(customerId);
+  if (typeof customerId === 'object' && typeof customerId.toHexString === 'function') {
+    const s = customerId.toHexString();
+    if (mongoose.Types.ObjectId.isValid(s)) return s;
+  }
+  return null;
+}
+
 function normalizeBranchName(s) {
   return String(s || '')
     .trim()
@@ -528,7 +541,7 @@ router.get('/', async (req, res) => {
     const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)));
     const customerIdStrs = uniq(
       data
-        .map((m) => (typeof m.customerId === 'string' ? m.customerId : (m.customerId?._bsontype === 'ObjectId' ? String(m.customerId) : null)))
+        .map((m) => rawMembershipCustomerIdToString(m.customerId))
         .filter((x) => x && mongoose.Types.ObjectId.isValid(x))
     );
     const customerObjectIds = customerIdStrs.map((s) => new mongoose.Types.ObjectId(s));
@@ -634,12 +647,12 @@ router.get('/', async (req, res) => {
 
     const resolveLegacy = (m) => {
       const out = { ...m };
-      // Hydrate from lookups when available (ensures customer shows in search results)
-      if (typeof out.customerId === 'string' && mongoose.Types.ObjectId.isValid(out.customerId)) {
-        const c = customerByIdHydrate.get(out.customerId);
-        if (c) out.customerId = c;
-      } else if (out.customerId && out.customerId._bsontype === 'ObjectId') {
-        const c = customerByIdHydrate.get(String(out.customerId));
+      // Hydrate from lookups when available (ensures customer name/phone show when searching by number, etc.)
+      const cidKey = typeof out.customerId === 'string' && mongoose.Types.ObjectId.isValid(out.customerId)
+        ? out.customerId
+        : rawMembershipCustomerIdToString(out.customerId);
+      if (cidKey) {
+        const c = customerByIdHydrate.get(cidKey);
         if (c) out.customerId = c;
       }
       if (out.soldAtBranchId && out.soldAtBranchId._bsontype === 'ObjectId') {
@@ -709,7 +722,8 @@ router.get('/', async (req, res) => {
       total,
       pages,
       memberships: data.map((raw) => {
-        const m = needLegacyResolution ? resolveLegacy(raw) : raw;
+        // Always resolveLegacy so customerId is hydrated from customerByIdHydrate (was skipped when needLegacyResolution was false).
+        const m = resolveLegacy(raw);
         const totalCredits = toNumber(m.totalCredits, toNumber(m.membershipTypeId?.totalCredits, 0));
         const usedCredits = toNumber(m.usedCredits, toNumber(m.used_credits, 0));
         return ({
@@ -1211,6 +1225,47 @@ router.post('/:id/use', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message || 'Failed to record usage.' });
+  }
+});
+
+/**
+ * DELETE /api/memberships/:id/usage/:usageId
+ * Admin only: remove a recorded session, restore credits, remove linked internal settlement rows.
+ */
+router.delete('/:id/usage/:usageId', authorize('admin'), async (req, res) => {
+  try {
+    const membership = await Membership.findById(req.params.id);
+    if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
+
+    const usage = await MembershipUsage.findById(req.params.usageId);
+    if (!usage || String(usage.membershipId) !== String(membership._id)) {
+      return res.status(404).json({ success: false, message: 'Usage record not found.' });
+    }
+
+    const credits = Math.max(0, Number(usage.creditsUsed) || 0);
+    membership.usedCredits = Math.max(0, membership.usedCredits - credits);
+
+    if (membership.usedCredits < membership.totalCredits) {
+      const exp = membership.expiryDate ? new Date(membership.expiryDate) : null;
+      membership.status = exp && exp < new Date() ? 'expired' : 'active';
+    }
+
+    await InternalSettlement.deleteMany({ membershipUsageId: usage._id });
+    await MembershipUsage.deleteOne({ _id: usage._id });
+    await membership.save();
+
+    createActivityLog({
+      userId: req.user._id,
+      branchId: usage.usedAtBranchId,
+      description: 'Deleted membership usage (restored credits)',
+      entity: 'membership',
+      entityId: membership._id,
+      details: { usageId: String(usage._id), creditsRestored: credits },
+    }).catch(() => {});
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to delete usage.' });
   }
 });
 
