@@ -1,6 +1,7 @@
 const express = require('express');
 const Lead = require('../models/Lead');
 const LeadStatus = require('../models/LeadStatus');
+const Settings = require('../models/Settings');
 const { protect, authorize } = require('../middleware/auth');
 const { getBranchId, branchFilterForLead } = require('../middleware/branchFilter');
 const { createActivityLog } = require('../utils/activityLog');
@@ -175,6 +176,12 @@ router.get('/:id', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      const settingsDoc = await Settings.findOne().lean();
+      if (settingsDoc?.showEditDeleteActionsToVendor !== true) {
+        return res.status(403).json({ success: false, message: 'Lead edit is disabled for staff in Settings.' });
+      }
+    }
     const lead = await Lead.findById(req.params.id);
     if (!lead) return res.status(404).json({ success: false, message: 'Lead not found.' });
     const filter = leadFilter(req);

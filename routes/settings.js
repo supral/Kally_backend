@@ -421,6 +421,12 @@ router.get('/', async (req, res) => {
       doc = await Settings.create({});
       doc = doc.toObject();
     }
+    const vendorEditDeleteEnabled =
+      doc.showEditDeleteActionsToVendor === true
+      || (doc.showEditDeleteActionsToVendor == null && doc.showMembershipActionsToVendor === true);
+    const vendorServiceActionsEnabled =
+      doc.showServiceActionsToVendor === true
+      || (doc.showServiceActionsToVendor == null && vendorEditDeleteEnabled);
     if (req.user.role === 'admin') {
       return res.json({
         success: true,
@@ -451,6 +457,8 @@ router.get('/', async (req, res) => {
           showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
           showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
           showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
+          showEditDeleteActionsToVendor: vendorEditDeleteEnabled,
+          showServiceActionsToVendor: vendorServiceActionsEnabled,
         },
       });
     }
@@ -476,6 +484,8 @@ router.get('/', async (req, res) => {
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
         showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
+        showEditDeleteActionsToVendor: vendorEditDeleteEnabled,
+        showServiceActionsToVendor: vendorServiceActionsEnabled,
       },
     });
   } catch (err) {
@@ -516,6 +526,8 @@ router.patch('/', async (req, res) => {
       showBulkDeleteMembershipsToAdmin,
       showBulkSettleSettlementsToAdmin,
       showPackageActionsToVendor,
+      showEditDeleteActionsToVendor,
+      showServiceActionsToVendor,
     } = req.body;
     const update = {};
     if (typeof revenuePercentage === 'number' && revenuePercentage >= 0 && revenuePercentage <= 100) {
@@ -602,11 +614,25 @@ router.patch('/', async (req, res) => {
     if (typeof showPackageActionsToVendor === 'boolean') {
       update.showPackageActionsToVendor = showPackageActionsToVendor;
     }
+    if (typeof showEditDeleteActionsToVendor === 'boolean') {
+      update.showEditDeleteActionsToVendor = showEditDeleteActionsToVendor;
+      // Keep legacy field in sync for backward compatibility.
+      update.showMembershipActionsToVendor = showEditDeleteActionsToVendor;
+    }
+    if (typeof showServiceActionsToVendor === 'boolean') {
+      update.showServiceActionsToVendor = showServiceActionsToVendor;
+    }
     const doc = await Settings.findOneAndUpdate(
       {},
       { $set: update },
       { new: true, upsert: true }
     ).lean();
+    const resolvedVendorEditDeleteEnabled =
+      doc.showEditDeleteActionsToVendor === true
+      || (doc.showEditDeleteActionsToVendor == null && doc.showMembershipActionsToVendor === true);
+    const resolvedVendorServiceActionsEnabled =
+      doc.showServiceActionsToVendor === true
+      || (doc.showServiceActionsToVendor == null && resolvedVendorEditDeleteEnabled);
     res.json({
       success: true,
       settings: {
@@ -636,6 +662,8 @@ router.patch('/', async (req, res) => {
         showBulkDeleteMembershipsToAdmin: doc.showBulkDeleteMembershipsToAdmin === true,
         showBulkSettleSettlementsToAdmin: doc.showBulkSettleSettlementsToAdmin === true,
         showPackageActionsToVendor: doc.showPackageActionsToVendor === true,
+        showEditDeleteActionsToVendor: resolvedVendorEditDeleteEnabled,
+        showServiceActionsToVendor: resolvedVendorServiceActionsEnabled,
       },
     });
   } catch (err) {

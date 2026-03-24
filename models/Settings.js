@@ -69,6 +69,12 @@ const settingsSchema = new mongoose.Schema(
     showBulkSettleSettlementsToAdmin: { type: Boolean, default: false },
     /** When true, Vendor/Staff see Edit, Activate, Inactive, Delete buttons on the Packages page. */
     showPackageActionsToVendor: { type: Boolean, default: false },
+    /** When true, Vendor/Staff can edit and delete memberships. */
+    showMembershipActionsToVendor: { type: Boolean, default: false },
+    /** When true, Vendor/Staff can see and use edit/delete actions across dashboard pages. */
+    showEditDeleteActionsToVendor: { type: Boolean, default: false },
+    /** Service-specific override. When true, Vendor/Staff can add/edit/delete services. */
+    showServiceActionsToVendor: { type: Boolean },
   },
   { timestamps: true }
 );

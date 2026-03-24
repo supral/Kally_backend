@@ -953,6 +953,14 @@ router.get('/:id', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      const settingsDoc = await Settings.findOne().lean();
+      const vendorActionsEnabled = settingsDoc?.showEditDeleteActionsToVendor === true
+        || (settingsDoc?.showEditDeleteActionsToVendor == null && settingsDoc?.showMembershipActionsToVendor === true);
+      if (!vendorActionsEnabled) {
+        return res.status(403).json({ success: false, message: 'Membership edit is disabled for staff in Settings.' });
+      }
+    }
     const membership = await Membership.findById(req.params.id);
     if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
 
@@ -1008,9 +1016,17 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-/** DELETE /api/memberships/:id - delete a membership (admin only). Removes usage records then the membership. */
-router.delete('/:id', authorize('admin'), async (req, res) => {
+/** DELETE /api/memberships/:id - delete a membership. Admin always allowed; vendor/staff only if enabled in Settings. */
+router.delete('/:id', async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      const settingsDoc = await Settings.findOne().lean();
+      const vendorActionsEnabled = settingsDoc?.showEditDeleteActionsToVendor === true
+        || (settingsDoc?.showEditDeleteActionsToVendor == null && settingsDoc?.showMembershipActionsToVendor === true);
+      if (!vendorActionsEnabled) {
+        return res.status(403).json({ success: false, message: 'Membership delete is disabled for staff in Settings.' });
+      }
+    }
     const membership = await Membership.findById(req.params.id)
       .populate('customerId', 'name')
       .populate('soldAtBranchId', 'name')

@@ -565,6 +565,12 @@ router.get('/:id/visit-history', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      const settingsDoc = await Settings.findOne().lean();
+      if (settingsDoc?.showEditDeleteActionsToVendor !== true) {
+        return res.status(403).json({ success: false, message: 'Customer edit is disabled for staff in Settings.' });
+      }
+    }
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ success: false, message: 'Invalid customer id.' });
     }

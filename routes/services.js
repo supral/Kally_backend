@@ -1,5 +1,6 @@
 const express = require('express');
 const Service = require('../models/Service');
+const Settings = require('../models/Settings');
 const { protect, authorize } = require('../middleware/auth');
 const { getBranchId } = require('../middleware/branchFilter');
 const { createActivityLog } = require('../utils/activityLog');
@@ -43,6 +44,16 @@ router.post('/', async (req, res) => {
     if (!isAdmin && !branchIdToUse) {
       return res.status(400).json({ success: false, message: 'You must be assigned to a branch to add services.' });
     }
+    if (!isAdmin) {
+      const settingsDoc = await Settings.findOne().lean();
+      const vendorEditDeleteEnabled = settingsDoc?.showEditDeleteActionsToVendor === true
+        || (settingsDoc?.showEditDeleteActionsToVendor == null && settingsDoc?.showMembershipActionsToVendor === true);
+      const vendorServiceActionsEnabled = settingsDoc?.showServiceActionsToVendor === true
+        || (settingsDoc?.showServiceActionsToVendor == null && vendorEditDeleteEnabled);
+      if (!vendorServiceActionsEnabled) {
+        return res.status(403).json({ success: false, message: 'Service add is disabled for staff in Roles & Permissions.' });
+      }
+    }
     const service = await Service.create({
       name,
       category: category || undefined,
@@ -85,6 +96,14 @@ router.put('/:id', async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const userBranchId = getBranchId(req.user);
     if (!isAdmin) {
+      const settingsDoc = await Settings.findOne().lean();
+      const vendorEditDeleteEnabled = settingsDoc?.showEditDeleteActionsToVendor === true
+        || (settingsDoc?.showEditDeleteActionsToVendor == null && settingsDoc?.showMembershipActionsToVendor === true);
+      const vendorServiceActionsEnabled = settingsDoc?.showServiceActionsToVendor === true
+        || (settingsDoc?.showServiceActionsToVendor == null && vendorEditDeleteEnabled);
+      if (!vendorServiceActionsEnabled) {
+        return res.status(403).json({ success: false, message: 'Service edit is disabled for staff in Roles & Permissions.' });
+      }
       if (!userBranchId || String(existing.branchId) !== String(userBranchId)) {
         return res.status(403).json({ success: false, message: 'You can only edit services for your branch.' });
       }
@@ -129,8 +148,18 @@ router.delete('/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ success: false, message: 'Service not found.' });
     const isAdmin = req.user.role === 'admin';
     const userBranchId = getBranchId(req.user);
-    if (!isAdmin && (!userBranchId || String(existing.branchId) !== String(userBranchId))) {
-      return res.status(403).json({ success: false, message: 'You can only remove services for your branch.' });
+    if (!isAdmin) {
+      const settingsDoc = await Settings.findOne().lean();
+      const vendorEditDeleteEnabled = settingsDoc?.showEditDeleteActionsToVendor === true
+        || (settingsDoc?.showEditDeleteActionsToVendor == null && settingsDoc?.showMembershipActionsToVendor === true);
+      const vendorServiceActionsEnabled = settingsDoc?.showServiceActionsToVendor === true
+        || (settingsDoc?.showServiceActionsToVendor == null && vendorEditDeleteEnabled);
+      if (!vendorServiceActionsEnabled) {
+        return res.status(403).json({ success: false, message: 'Service delete is disabled for staff in Roles & Permissions.' });
+      }
+      if (!userBranchId || String(existing.branchId) !== String(userBranchId)) {
+        return res.status(403).json({ success: false, message: 'You can only remove services for your branch.' });
+      }
     }
     await Service.findByIdAndUpdate(id, { isActive: false });
     createActivityLog({
