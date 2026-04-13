@@ -56,12 +56,26 @@ const listPackages = async (req, res) => {
 
     const search = searchParam.toLowerCase();
     if (search) {
-      const statusMatch = search === 'active' ? true : search === 'inactive' ? false : null;
-      filter.$or = [
-        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { totalSessions: Number.isFinite(Number(search)) ? Number(search) : -999999 },
-      ];
-      if (statusMatch !== null) filter.$or.push({ isActive: statusMatch });
+      const tokens = search.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+      // Multi-word "AND" search: every token must match at least one searchable field.
+      // Example: "facial 5" => name contains facial AND (sessions/price/discount/status/name) matches 5.
+      if (tokens.length > 0) {
+        const perToken = tokens.map((token) => {
+          const safe = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const asNum = Number(token);
+          const numSearch = Number.isFinite(asNum) ? asNum : null;
+          const tokenOr = [{ name: { $regex: safe, $options: 'i' } }];
+          if ('active'.includes(token)) tokenOr.push({ isActive: true });
+          if ('inactive'.includes(token)) tokenOr.push({ isActive: false });
+          if (numSearch != null) {
+            tokenOr.push({ totalSessions: numSearch });
+            tokenOr.push({ price: numSearch });
+            tokenOr.push({ discountAmount: numSearch });
+          }
+          return { $or: tokenOr };
+        });
+        filter.$and = perToken;
+      }
     }
 
     const [total, list] = await Promise.all([

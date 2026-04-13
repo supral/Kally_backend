@@ -132,11 +132,12 @@ router.get('/:id', async (req, res) => {
 
     const bid = getBranchId(req.user);
     const isAdmin = req.user.role === 'admin';
+    const bidStr = bid ? String(bid) : '';
     const canAccess =
       isAdmin ||
-      ticket.createdByBranchId?._id?.toString() === bid ||
-      ticket.targetBranchId?._id?.toString() === bid ||
-      (ticket.targetBranchId == null && bid);
+      ticket.createdByBranchId?._id?.toString() === bidStr ||
+      ticket.targetBranchId?._id?.toString() === bidStr ||
+      (ticket.targetBranchId == null && !!bidStr);
 
     if (!canAccess) return res.status(404).json({ success: false, message: 'Ticket not found.' });
 
@@ -178,11 +179,12 @@ router.post('/:id/reply', async (req, res) => {
 
     const bid = getBranchId(req.user);
     const isAdmin = req.user.role === 'admin';
+    const bidStr = bid ? String(bid) : '';
     const canAccess =
       isAdmin ||
-      String(ticket.createdByBranchId) === bid ||
-      String(ticket.targetBranchId) === bid ||
-      (ticket.targetBranchId == null && bid);
+      String(ticket.createdByBranchId) === bidStr ||
+      String(ticket.targetBranchId) === bidStr ||
+      (ticket.targetBranchId == null && !!bidStr);
 
     if (!canAccess) return res.status(404).json({ success: false, message: 'Ticket not found.' });
 
@@ -240,11 +242,12 @@ router.patch('/:id', async (req, res) => {
 
     const bid = getBranchId(req.user);
     const isAdmin = req.user.role === 'admin';
+    const bidStr = bid ? String(bid) : '';
     const canAccess =
       isAdmin ||
-      String(ticket.createdByBranchId) === bid ||
-      String(ticket.targetBranchId) === bid ||
-      (ticket.targetBranchId == null && bid);
+      String(ticket.createdByBranchId) === bidStr ||
+      String(ticket.targetBranchId) === bidStr ||
+      (ticket.targetBranchId == null && !!bidStr);
 
     if (!canAccess) return res.status(404).json({ success: false, message: 'Ticket not found.' });
 

@@ -84,6 +84,29 @@ function parseTotalUsedRemaining(value) {
   };
 }
 
+function applyStatusFilter(filter, statusRaw, searchParam) {
+  const status = String(statusRaw || '').trim().toLowerCase();
+  if (status) {
+    if (status === 'active') {
+      // Treat legacy/missing status as active unless explicitly used/expired/inactive.
+      filter.status = { $nin: ['used', 'USED', 'expired', 'EXPIRED', 'inactive', 'INACTIVE'] };
+      return;
+    }
+    if (status === 'used') {
+      filter.status = { $in: ['used', 'USED'] };
+      return;
+    }
+    if (status === 'expired') {
+      filter.status = { $in: ['expired', 'EXPIRED', 'inactive', 'INACTIVE'] };
+      return;
+    }
+    filter.status = status;
+    return;
+  }
+  // By default, hide fully used memberships from list; include them when searching.
+  if (!searchParam) filter.status = { $nin: ['used', 'USED'] };
+}
+
 const router = express.Router();
 
 router.use(protect);
@@ -145,10 +168,7 @@ router.get('/', async (req, res) => {
     // Universal: all branches see all memberships (so any branch can do credit redeem). Admin can filter by sold-at branch for reporting.
     if (req.user.role === 'admin' && branchId) filter.soldAtBranchId = branchId;
     if (customerId) filter.customerId = customerId;
-    // By default, hide fully used memberships from the list, but allow explicit status filter to override.
-    // When searching, include "used" too so search doesn't look broken.
-    if (status) filter.status = status;
-    else if (!searchParam) filter.status = { $ne: 'used' };
+    applyStatusFilter(filter, status, searchParam);
     if (dateFrom || dateTo) {
       filter.purchaseDate = {};
       if (dateFrom) filter.purchaseDate.$gte = new Date(dateFrom);
@@ -922,10 +942,19 @@ router.get('/:id', async (req, res) => {
   try {
     const membership = await Membership.findById(req.params.id)
       .populate('customerId', 'name phone email membershipCardId customer_name customerName customer_email customerEmail contact mobile phoneNumber id cardId card_id')
-      .populate('membershipTypeId', 'name totalCredits serviceCategory')
+      .populate('membershipTypeId', 'name totalCredits serviceCategory price')
       .populate('soldAtBranchId', 'name')
       .lean();
     if (!membership) return res.status(404).json({ success: false, message: 'Membership not found.' });
+
+    let resolvedPackagePrice = membership.packagePrice;
+    if (resolvedPackagePrice == null && membership.packageName) {
+      const pkg = await Package.findOne({ name: membership.packageName }).select('price').lean();
+      if (pkg && Number.isFinite(Number(pkg.price))) resolvedPackagePrice = Number(pkg.price);
+    }
+    if (resolvedPackagePrice == null && membership.membershipTypeId?.price != null) {
+      resolvedPackagePrice = Number(membership.membershipTypeId.price);
+    }
 
     const usages = await MembershipUsage.find({ membershipId: membership._id })
       .populate('usedAtBranchId', 'name')
@@ -947,7 +976,7 @@ router.get('/:id', async (req, res) => {
         purchaseDate: membership.purchaseDate,
         expiryDate: membership.expiryDate,
         status: membership.status,
-        packagePrice: membership.packagePrice,
+        packagePrice: resolvedPackagePrice,
         discountAmount: membership.discountAmount ?? 0,
       },
       usageHistory: usages.map((u) => ({
@@ -1065,7 +1094,7 @@ router.delete('/:id', async (req, res) => {
 /** POST /api/memberships/:id/renew - create a new membership as renewal (expired or fully used). Form sends price & package details; price is included in total sales. */
 router.post('/:id/renew', async (req, res) => {
   try {
-    const { packagePrice, totalCredits, expiryDate } = req.body;
+    const { packageId, packagePrice, totalCredits, expiryDate } = req.body;
 
     const membership = await Membership.findById(req.params.id)
       .populate('membershipTypeId', 'name totalCredits')
@@ -1075,20 +1104,42 @@ router.post('/:id/renew', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Only expired or fully used memberships can be renewed.' });
     }
 
-    const price = typeof packagePrice === 'number' && packagePrice >= 0
-      ? packagePrice
-      : (typeof packagePrice === 'string' ? parseFloat(packagePrice) : NaN);
-    if (Number.isNaN(price) || price < 0) {
-      return res.status(400).json({ success: false, message: 'Renewal price is required and must be 0 or greater.' });
-    }
+    let price;
+    let credits;
+    let packageName = membership.packageName || membership.membershipTypeId?.name;
+    let discountAmount = 0;
 
-    const credits = totalCredits != null && Number(totalCredits) > 0
-      ? Number(totalCredits)
-      : membership.totalCredits;
+    if (packageId) {
+      if (!mongoose.Types.ObjectId.isValid(packageId)) {
+        return res.status(400).json({ success: false, message: 'Invalid package selected for renewal.' });
+      }
+      const pkg = await Package.findById(packageId).lean();
+      if (!pkg) {
+        return res.status(404).json({ success: false, message: 'Selected package not found.' });
+      }
+      price = Number(pkg.price);
+      if (!Number.isFinite(price) || price < 0) {
+        return res.status(400).json({ success: false, message: 'Selected package has an invalid price.' });
+      }
+      credits = Number(pkg.totalSessions ?? 1);
+      if (!Number.isFinite(credits) || credits < 1) credits = 1;
+      packageName = pkg.name || packageName;
+      discountAmount = Number(pkg.discountAmount ?? 0);
+      if (!Number.isFinite(discountAmount) || discountAmount < 0) discountAmount = 0;
+    } else {
+      price = typeof packagePrice === 'number' && packagePrice >= 0
+        ? packagePrice
+        : (typeof packagePrice === 'string' ? parseFloat(packagePrice) : NaN);
+      if (Number.isNaN(price) || price < 0) {
+        return res.status(400).json({ success: false, message: 'Renewal price is required and must be 0 or greater.' });
+      }
+      credits = totalCredits != null && Number(totalCredits) > 0
+        ? Number(totalCredits)
+        : membership.totalCredits;
+    }
     const expiry = expiryDate ? new Date(expiryDate) : undefined;
 
-    const packageName = membership.packageName || membership.membershipTypeId?.name;
-    const settlementAmount = computeSettlementPerCredit(price, 0, credits);
+    const settlementAmount = computeSettlementPerCredit(price, discountAmount, credits);
     const newMembership = await Membership.create({
       customerId: membership.customerId,
       membershipTypeId: membership.membershipTypeId._id || membership.membershipTypeId,
@@ -1097,7 +1148,7 @@ router.post('/:id/renew', async (req, res) => {
       soldAtBranchId: membership.soldAtBranchId._id || membership.soldAtBranchId,
       status: 'active',
       packagePrice: price,
-      discountAmount: 0,
+      discountAmount,
       packageName,
       settlementAmount,
       expiryDate: expiry,
